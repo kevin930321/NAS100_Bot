@@ -423,7 +423,16 @@ class CTraderConnection extends EventEmitter {
             const ProtoOAPayloadType = this.proto.lookupEnum('ProtoOAPayloadType');
             for (const [name, id] of Object.entries(ProtoOAPayloadType.values)) {
                 if (id === typeId) {
-                    return name.replace('PROTO_OA_', 'ProtoOA').replace('_REQ', 'Req').replace('_RES', 'Res').replace('_EVENT', 'Event');
+                    // 將 PROTO_OA_ERROR_RES 轉為 ProtoOAErrorRes
+                    return name
+                        .split('_')
+                        .map(part => {
+                            if (part === 'OA') return 'OA'; // 保留 OA 大寫
+                            if (part === 'PROTO') return 'Proto';
+                            return part.charAt(0) + part.slice(1).toLowerCase();
+                        })
+                        .join('')
+                        .replace('Req', 'Req').replace('Res', 'Res').replace('Event', 'Event'); // 確保尾綴格式正確
                 }
             }
         }
