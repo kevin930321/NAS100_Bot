@@ -157,6 +157,18 @@ class CTraderConnection extends EventEmitter {
     }
 
     /**
+     * 發送 Trader Info Request (查詢餘額等)
+     */
+    async sendTraderReq() {
+        const ProtoOATraderReq = this.proto.lookupType('ProtoOATraderReq');
+        const message = ProtoOATraderReq.create({
+            ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
+        });
+
+        return this.send('ProtoOATraderReq', message);
+    }
+
+    /**
      * 發送訊息（通用）
      */
     async send(payloadType, payload) {
@@ -284,6 +296,20 @@ class CTraderConnection extends EventEmitter {
 
             case 'ProtoHeartbeatEvent':
                 this.lastHeartbeat = Date.now();
+                break;
+
+            case 'ProtoOATraderRes':
+                const ProtoOATraderRes = this.proto.lookupType('ProtoOATraderRes');
+                const traderRes = ProtoOATraderRes.decode(message.payload);
+                console.log(`💰 收到帳戶資訊: ID=${traderRes.trader.ctidTraderAccountId}, Balance=${traderRes.trader.balance}`);
+                this.emit('trader-info', traderRes.trader);
+                break;
+
+            case 'ProtoOATraderUpdatedEvent':
+                const ProtoOATraderUpdatedEvent = this.proto.lookupType('ProtoOATraderUpdatedEvent');
+                const traderUpdate = ProtoOATraderUpdatedEvent.decode(message.payload);
+                console.log(`💰 帳戶餘額更新: Balance=${traderUpdate.trader.balance}`);
+                this.emit('trader-update', traderUpdate.trader);
                 break;
         }
 

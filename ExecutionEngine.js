@@ -52,6 +52,22 @@ class ExecutionEngine extends EventEmitter {
             console.log('🔄 Account Auth 成功，重新訂閱報價並同步持倉...');
             this.subscribeToMarketData();
             this.reconcilePositions(); // 關鍵修復：斷線重連後必須確認持倉狀態
+            this.connection.sendTraderReq().catch(err => console.error('❌ 查詢餘額失敗:', err.message));
+        });
+
+        // 監聽帳戶資訊更新 (餘額)
+        this.connection.on('trader-info', (trader) => {
+            if (trader.balance) {
+                this.balance = trader.balance / 100; // cTrader balance is in cents
+                console.log(`💰 餘額已更新: $${this.balance}`);
+            }
+        });
+
+        this.connection.on('trader-update', (trader) => {
+            if (trader.balance) {
+                this.balance = trader.balance / 100;
+                console.log(`💰 餘額已更新(推送): $${this.balance}`);
+            }
         });
     }
 
