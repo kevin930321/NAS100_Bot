@@ -922,11 +922,19 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
-     * 開始盯盤 (非同步)
+     * 取得並設定開盤價（新交易日時呼叫）
+     * 與 startWatching 分離，讓取得開盤價可以提早執行
+     * @param {number} retryCount - 當前重試次數（內部使用）
      */
-    async startWatching() {
-        if (this.isWatching || this.todayTradeDone) return;
-        if (this.isFetchingOpenPrice) return;
+    async fetchAndSetOpenPrice(retryCount = 0) {
+        const MAX_RETRIES = 1;
+        const RETRY_DELAY_MS = 30000; // 30 秒
+
+        if (this.todayOpenPrice !== null) {
+            console.log('ℹ️ 已有開盤價，跳過取得');
+            return true;
+        }
+        if (this.isFetchingOpenPrice) return false;
 
         this.isFetchingOpenPrice = true;
         try {
@@ -934,20 +942,55 @@ class ExecutionEngine extends EventEmitter {
             const marketStatus = await this.checkMarketStatus();
             if (!marketStatus.isOpen) {
                 console.log(`🚫 市場未開放: ${marketStatus.reason}`);
-                return;
+                return false;
             }
 
             const price = await this.fetchDailyOpenPrice();
             if (price !== null) {
                 this.setTodayOpenPrice(price);
-                this.isWatching = true;
-                console.log('👀 成功鎖定開盤價，開始盯盤');
+                console.log('✅ 開盤價已鎖定，等待盯盤時間...');
+                return true;
             } else {
-                console.warn('⚠️ 尚未取得有效開盤價，暫停交易，稍後重試...');
+                // 失敗，嘗試重試
+                if (retryCount < MAX_RETRIES) {
+                    console.warn(`⚠️ 尚未取得有效開盤價，${RETRY_DELAY_MS / 1000} 秒後重試 (${retryCount + 1}/${MAX_RETRIES})...`);
+                    this.isFetchingOpenPrice = false; // 先釋放鎖
+
+                    // 設定延遲重試
+                    setTimeout(() => {
+                        this.fetchAndSetOpenPrice(retryCount + 1);
+                    }, RETRY_DELAY_MS);
+
+                    return false;
+                } else {
+                    console.error('❌ 多次重試後仍無法取得開盤價，將在盯盤時間再次嘗試');
+                    return false;
+                }
             }
         } finally {
             this.isFetchingOpenPrice = false;
         }
+    }
+
+    /**
+     * 開始盯盤 (非同步)
+     * 如果已有開盤價，直接開始盯盤；否則嘗試取得
+     */
+    async startWatching() {
+        if (this.isWatching || this.todayTradeDone) return;
+
+        // 如果還沒有開盤價，嘗試取得
+        if (this.todayOpenPrice === null) {
+            const success = await this.fetchAndSetOpenPrice();
+            if (!success) {
+                console.warn('⚠️ 無法取得開盤價，暫停盯盤');
+                return;
+            }
+        }
+
+        // 開始盯盤
+        this.isWatching = true;
+        console.log('👀 開始盯盤');
     }
 
 

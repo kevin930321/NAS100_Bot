@@ -179,6 +179,10 @@ class TradingBot {
                 if (this.lastResetDate !== today) {
                     this.resetDaily();
                     this.lastResetDate = today;
+
+                    // 新交易日重置後，立即嘗試取得開盤價
+                    console.log('🔄 新交易日，嘗試取得今日開盤價...');
+                    this.engine.fetchAndSetOpenPrice();
                 }
             }
         }
