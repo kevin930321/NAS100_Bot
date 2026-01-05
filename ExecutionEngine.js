@@ -756,25 +756,34 @@ class ExecutionEngine extends EventEmitter {
             const isDst = this.checkIsUsDst(now);
             const marketConfig = isDst ? this.config.market.summer : this.config.market.winter;
 
-            const openTime = new Date(now);
-            openTime.setHours(marketConfig.openHour, marketConfig.openMinute, 0, 0);
+            // 修正：使用台北時區 (UTC+8) 計算開盤時間
+            // 避免伺服器時區不同導致計算錯誤
+            const TAIPEI_OFFSET = 8 * 60 * 60 * 1000; // UTC+8 in milliseconds
 
-            // 如果現在還沒到今天的開盤時間 (例如凌晨 05:00)，理論上不該呼叫此函數 (應由 trading-bot 控制)
-            // 但如果發生了，我們應該抓取「昨天」的開盤價嗎？
-            // 策略上，resetDaily 會在開盤後觸發，所以這裡假設 now >= openTime
-            // 如果 now < openTime，可能是剛過午夜但還沒開盤，此時應該算是「前一個交易日」還在進行中
-            // 但為了保險，若 now < openTime，我們退回一天 (雖然通常 trading-bot 會擋)
-            if (now < openTime) {
+            // 取得當前 UTC 時間
+            const nowUtc = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+            // 轉換為台北時間
+            const nowTaipei = new Date(nowUtc + TAIPEI_OFFSET);
+
+            // 計算今日開盤時間（台北時間）
+            const openTimeTaipei = new Date(nowTaipei);
+            openTimeTaipei.setHours(marketConfig.openHour, marketConfig.openMinute, 0, 0);
+
+            // 如果當前台北時間還沒到開盤，退回一天
+            if (nowTaipei < openTimeTaipei) {
                 console.warn('⚠️ 當前時間早於今日開盤時間，嘗試獲取昨日開盤價...');
-                openTime.setDate(openTime.getDate() - 1);
+                openTimeTaipei.setDate(openTimeTaipei.getDate() - 1);
             }
 
-            console.log(`📅 鎖定開盤時間: ${openTime.toLocaleString()}`);
+            // 將台北時間轉回 UTC timestamp (供 API 使用)
+            const openTimeUtc = openTimeTaipei.getTime() - TAIPEI_OFFSET - openTimeTaipei.getTimezoneOffset() * 60 * 1000;
+
+            console.log(`📅 鎖定開盤時間: ${openTimeTaipei.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })} (台北時間)`);
 
             // 請求該分鐘的 M1 K 線
-            // fromTimestamp = openTime
+            // fromTimestamp = openTime (UTC)
             // toTimestamp = openTime + 1 min
-            const fromTimestamp = openTime.getTime();
+            const fromTimestamp = openTimeUtc;
             const toTimestamp = fromTimestamp + 60000;
 
             const request = ProtoOAGetTrendbarsReq.create({
