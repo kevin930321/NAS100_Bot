@@ -10,6 +10,7 @@
  */
 
 const net = require('net');
+const tls = require('tls');
 const protobuf = require('protobufjs');
 const path = require('path');
 const EventEmitter = require('events');
@@ -80,10 +81,13 @@ class CTraderConnection extends EventEmitter {
             console.log(`📡 正在連接 cTrader ${this.config.ctrader.mode} 伺服器...`);
             console.log(`   Host: ${host}:${port}`);
 
-            this.socket = new net.Socket();
-
-            this.socket.connect(port, host, () => {
-                console.log('✅ TCP 連線建立成功');
+            // 使用 TLS 加密連線 (cTrader API 要求)
+            this.socket = tls.connect({
+                host: host,
+                port: port,
+                rejectUnauthorized: true  // 驗證伺服器憑證
+            }, () => {
+                console.log('✅ TLS 連線建立成功');
                 this.connected = true;
                 this.reconnectAttempts = 0;
 
