@@ -328,6 +328,18 @@
                     <div class="stat-value text-green" id="balance">$--</div>
                 </div>
                 <div class="stat-item">
+                    <div class="stat-label">淨值</div>
+                    <div class="stat-value" id="equity">$--</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">已用保證金</div>
+                    <div class="stat-value" id="usedMargin">$--</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">可用保證金</div>
+                    <div class="stat-value" id="freeMargin">$--</div>
+                </div>
+                <div class="stat-item">
                     <div class="stat-label">勝率</div>
                     <div class="stat-value" id="win-rate">--</div>
                 </div>
@@ -338,6 +350,10 @@
                 <div class="stat-item">
                     <div class="stat-label">總敗場</div>
                     <div class="stat-value text-red" id="losses">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">槓桿</div>
+                    <div class="stat-value" id="leverage">--</div>
                 </div>
             </div>
         </div>
@@ -457,9 +473,23 @@
 
             // 帳戶統計
             document.getElementById('balance').textContent = '$' + (data.balance || 0).toFixed(2);
+            document.getElementById('equity').textContent = '$' + (data.equity || data.balance || 0).toFixed(2);
+            document.getElementById('usedMargin').textContent = '$' + (data.usedMargin || 0).toFixed(2);
+            document.getElementById('freeMargin').textContent = '$' + (data.freeMargin || data.balance || 0).toFixed(2);
             document.getElementById('win-rate').textContent = data.winRate || '--';
             document.getElementById('wins').textContent = data.wins || 0;
             document.getElementById('losses').textContent = data.losses || 0;
+            document.getElementById('leverage').textContent = data.leverage ? '1:' + data.leverage : '--';
+
+            // 淨值顏色 (根據未實現損益)
+            const equityEl = document.getElementById('equity');
+            if (data.unrealizedPnL > 0) {
+                equityEl.className = 'stat-value text-green';
+            } else if (data.unrealizedPnL < 0) {
+                equityEl.className = 'stat-value text-red';
+            } else {
+                equityEl.className = 'stat-value';
+            }
 
             // 策略參數 (只在首次載入時填入)
             if (data.config && !window.configLoaded) {

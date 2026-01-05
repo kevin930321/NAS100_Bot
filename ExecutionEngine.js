@@ -197,27 +197,73 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
-     * 取得帳戶資訊 (餘額、淨值等)
+     * 取得帳戶資訊 (餘額、淨值、保證金等)
      */
     async getAccountInfo() {
         try {
-            // 發送 ProtoOATraderReq
+            // 1. 取得帳戶基本資訊
             const ProtoOATraderReq = this.connection.proto.lookupType('ProtoOATraderReq');
-            const message = ProtoOATraderReq.create({
+            const traderMessage = ProtoOATraderReq.create({
                 ctidTraderAccountId: parseInt(this.config.ctrader.accountId)
             });
 
-            const response = await this.connection.send('ProtoOATraderReq', message);
+            const traderResponse = await this.connection.send('ProtoOATraderReq', traderMessage);
             const ProtoOATraderRes = this.connection.proto.lookupType('ProtoOATraderRes');
-            const payload = ProtoOATraderRes.decode(response.payload);
+            const traderPayload = ProtoOATraderRes.decode(traderResponse.payload);
 
-            // 解析餘額 (根據 moneyDigits 轉換)
-            const moneyDigits = payload.trader.moneyDigits || 2;
+            const moneyDigits = traderPayload.trader.moneyDigits || 2;
             const divisor = Math.pow(10, moneyDigits);
+            const balance = traderPayload.trader.balance / divisor;
+
+            // 2. 取得未實現損益
+            let unrealizedPnL = 0;
+            try {
+                const ProtoOAGetPositionUnrealizedPnLReq = this.connection.proto.lookupType('ProtoOAGetPositionUnrealizedPnLReq');
+                const pnlMessage = ProtoOAGetPositionUnrealizedPnLReq.create({
+                    ctidTraderAccountId: parseInt(this.config.ctrader.accountId)
+                });
+
+                const pnlResponse = await this.connection.send('ProtoOAGetPositionUnrealizedPnLReq', pnlMessage);
+                const ProtoOAGetPositionUnrealizedPnLRes = this.connection.proto.lookupType('ProtoOAGetPositionUnrealizedPnLRes');
+                const pnlPayload = ProtoOAGetPositionUnrealizedPnLRes.decode(pnlResponse.payload);
+
+                const pnlMoneyDigits = pnlPayload.moneyDigits || moneyDigits;
+                const pnlDivisor = Math.pow(10, pnlMoneyDigits);
+
+                // 加總所有持倉的未實現損益
+                if (pnlPayload.positionUnrealizedPnL) {
+                    for (const pos of pnlPayload.positionUnrealizedPnL) {
+                        unrealizedPnL += (pos.netUnrealizedPnL || 0) / pnlDivisor;
+                    }
+                }
+            } catch (e) {
+                // 如果無法取得未實現損益，忽略
+            }
+
+            // 3. 取得持倉資訊計算已用保證金
+            let usedMargin = 0;
+            try {
+                const positions = await this.getOpenPositions();
+                for (const pos of positions) {
+                    const posMoneyDigits = pos.moneyDigits || moneyDigits;
+                    const posDivisor = Math.pow(10, posMoneyDigits);
+                    usedMargin += (pos.usedMargin || 0) / posDivisor;
+                }
+            } catch (e) {
+                // 忽略
+            }
+
+            // 4. 計算衍生值
+            const equity = balance + unrealizedPnL;
+            const freeMargin = equity - usedMargin;
 
             const accountInfo = {
-                balance: payload.trader.balance / divisor,
-                leverage: payload.trader.leverageInCents ? payload.trader.leverageInCents / 100 : null,
+                balance: balance,
+                equity: equity,
+                usedMargin: usedMargin,
+                freeMargin: freeMargin,
+                unrealizedPnL: unrealizedPnL,
+                leverage: traderPayload.trader.leverageInCents ? traderPayload.trader.leverageInCents / 100 : null,
                 moneyDigits: moneyDigits
             };
 

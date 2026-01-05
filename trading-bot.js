@@ -406,6 +406,10 @@ app.get('/api/status', async (req, res) => {
                 const accountInfo = await bot.engine.getAccountInfo();
                 if (accountInfo) {
                     status.balance = accountInfo.balance;
+                    status.equity = accountInfo.equity;
+                    status.usedMargin = accountInfo.usedMargin;
+                    status.freeMargin = accountInfo.freeMargin;
+                    status.unrealizedPnL = accountInfo.unrealizedPnL;
                     status.leverage = accountInfo.leverage;
                 }
             } catch (e) {
