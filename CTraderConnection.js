@@ -248,6 +248,9 @@ class CTraderConnection extends EventEmitter {
      * 處理解碼後的訊息
      */
     handleMessage(message) {
+        // 收到任何訊息都視為連線活躍 (Heartbeat)
+        this.lastHeartbeat = Date.now();
+
         const payloadTypeName = this.getPayloadTypeName(message.payloadType);
 
         console.log(`📨 收到訊息: ${payloadTypeName}`);
