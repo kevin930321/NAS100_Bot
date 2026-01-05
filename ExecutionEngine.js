@@ -724,7 +724,7 @@ class ExecutionEngine extends EventEmitter {
     async saveState() {
         try {
             const state = {
-                balance: this.balance,
+                // 注意：balance 不再儲存，因為從 cTrader API 即時取得
                 wins: this.wins,
                 losses: this.losses,
                 trades: this.trades,

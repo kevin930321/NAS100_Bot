@@ -253,7 +253,11 @@ class CTraderConnection extends EventEmitter {
 
         const payloadTypeName = this.getPayloadTypeName(message.payloadType);
 
-        console.log(`📨 收到訊息: ${payloadTypeName}`);
+        // 過濾掉頻繁的訊息，避免 log 洗版
+        const quietMessages = ['ProtoOASpotEvent', 'ProtoHeartbeatEvent'];
+        if (!quietMessages.includes(payloadTypeName)) {
+            console.log(`📨 收到訊息: ${payloadTypeName}`);
+        }
 
         // 處理回應
         if (message.clientMsgId && this.pendingRequests.has(message.clientMsgId)) {
