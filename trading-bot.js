@@ -159,31 +159,26 @@ class TradingBot {
         // 週末不處理
         if (dayOfWeek === 0 || dayOfWeek === 6) return;
 
-        // 新交易日
-        if (this.lastDate !== today) {
-            this.lastDate = today;
-            console.log(`📅 新交易日: ${today} (美股 ${isDst ? '夏令' : '冬令'}時間)`);
-        }
-
         // 假日判斷已移至 ExecutionEngine.checkMarketStatus()
         // 由 cTrader API 動態取得假日資訊，無需手動維護
 
-        // 每日重置（市場開盤時或之後首次運行）
+        // 判斷是否已過開盤時間
         const marketConfig = isDst ? config.market.summer : config.market.winter;
         const isAfterOpen = hour > marketConfig.openHour || (hour === marketConfig.openHour && minute >= marketConfig.openMinute);
 
-        if (isAfterOpen) {
-            // 嘗試執行重置，Engine 內部會檢查是否已經做過
-            if (this.engine) {
-                // 如果本地變數還沒更新，就呼叫 Engine 嘗試重置
-                if (this.lastResetDate !== today) {
-                    this.resetDaily();
-                    this.lastResetDate = today;
+        // 新交易日判斷：只有在開盤時間後才算是新交易日的開始
+        // 這樣可以避免午夜時就觸發「新交易日」但市場還沒開盤
+        if (isAfterOpen && this.lastResetDate !== today) {
+            console.log(`📅 新交易日: ${today} (美股 ${isDst ? '夏令' : '冬令'}時間)`);
 
-                    // 新交易日重置後，立即嘗試取得開盤價
-                    console.log('🔄 新交易日，嘗試取得今日開盤價...');
-                    this.engine.fetchAndSetOpenPrice();
-                }
+            // 執行每日重置
+            if (this.engine) {
+                this.resetDaily();
+                this.lastResetDate = today;
+
+                // 新交易日重置後，立即嘗試取得開盤價
+                console.log('🔄 新交易日，嘗試取得今日開盤價...');
+                this.engine.fetchAndSetOpenPrice();
             }
         }
 
