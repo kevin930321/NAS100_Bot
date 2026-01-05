@@ -781,10 +781,10 @@ class ExecutionEngine extends EventEmitter {
             console.log(`📅 鎖定開盤時間: ${openTimeTaipei.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })} (台北時間)`);
 
             // 請求該分鐘的 M1 K 線
-            // fromTimestamp = openTime (UTC)
-            // toTimestamp = openTime + 1 min
-            const fromTimestamp = openTimeUtc;
-            const toTimestamp = fromTimestamp + 60000;
+            // 請求前後 5 分鐘的 K 線，確保能包含到 07:00
+            // 有時候 API 邊界處理可能會漏掉剛好在起始點的資料
+            const fromTimestamp = openTimeUtc - 60000; // 提早 1 分鐘
+            const toTimestamp = openTimeUtc + 300000;  // 往後 5 分鐘
 
             const request = ProtoOAGetTrendbarsReq.create({
                 ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
@@ -792,7 +792,7 @@ class ExecutionEngine extends EventEmitter {
                 symbolId: symbolData.symbolId,
                 fromTimestamp: fromTimestamp,
                 toTimestamp: toTimestamp,
-                count: 1
+                count: 10
             });
 
             const response = await this.connection.send('ProtoOAGetTrendbarsReq', request);
@@ -800,23 +800,34 @@ class ExecutionEngine extends EventEmitter {
             const payload = ProtoOAGetTrendbarsRes.decode(response.payload);
 
             if (payload.trendbar && payload.trendbar.length > 0) {
-                const bar = payload.trendbar[0];
+                // 尋找時間戳記剛好等於 openTimeUtc 的 K 線
+                // cTrader Trendbar timestamp 是 UTC 分鐘數 (沒有毫秒)
+                // 我們可以直接比對 utcTimestampInMinutes
+                const targetMinute = Math.floor(openTimeUtc / 60000);
 
-                // Low is int64, deltaOpen is uint64
-                const low = typeof bar.low === 'number' ? bar.low : bar.low.toNumber();
-                const deltaOpen = typeof bar.deltaOpen === 'number' ? bar.deltaOpen : (bar.deltaOpen ? bar.deltaOpen.toNumber() : 0);
+                const targetBar = payload.trendbar.find(bar => bar.utcTimestampInMinutes === targetMinute);
 
-                const openPrice = low + deltaOpen;
+                if (targetBar) {
+                    const low = typeof targetBar.low === 'number' ? targetBar.low : targetBar.low.toNumber();
+                    const deltaOpen = typeof targetBar.deltaOpen === 'number' ? targetBar.deltaOpen : (targetBar.deltaOpen ? targetBar.deltaOpen.toNumber() : 0);
+                    const openPrice = low + deltaOpen;
 
-                // Debug: 顯示這根 K 線的實際時間
-                const barTimeUtc = bar.utcTimestampInMinutes * 60000;
-                const barTimeTaipei = new Date(barTimeUtc).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+                    // Debug: 顯示這根 K 線的實際時間
+                    const barTimeUtc = targetBar.utcTimestampInMinutes * 60000;
+                    const barTimeTaipei = new Date(barTimeUtc).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+                    console.log(`🔍 [Debug] K線時間: ${barTimeTaipei} (UTC: ${new Date(barTimeUtc).toISOString()})`);
 
-                console.log(`🔍 [Debug] K線時間: ${barTimeTaipei} (UTC: ${new Date(barTimeUtc).toISOString()})`);
-                console.log(`✅ 取得 cTrader 精確開盤價 (${openTimeTaipei.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei' })}): ${openPrice} (Raw Points)`);
-                return openPrice;
+                    console.log(`✅ 取得 cTrader 精確開盤價 (${openTimeTaipei.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei' })}): ${openPrice} (Raw Points)`);
+                    return openPrice;
+                } else {
+                    console.warn(`⚠️ 找到 K 線資料，但沒有 07:00 整的資料 (最近: ${new Date(payload.trendbar[0].utcTimestampInMinutes * 60000).toISOString()})`);
+
+                    // 如果真的沒有 07:00，是否要用最接近的一根？
+                    // 目前先回傳 null 讓它重試
+                    return null;
+                }
             } else {
-                console.warn('⚠️ 該時間點無 K 線資料 (可能尚未開盤或無成交)');
+                console.warn('⚠️ 該時間範圍內無 K 線資料');
                 return null;
             }
         } catch (error) {
