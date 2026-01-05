@@ -458,16 +458,20 @@
                 tradeEl.className = 'status-badge status-idle';
             }
 
-            // 價格
-            document.getElementById('current-price').textContent =
-                data.currentPrice ? data.currentPrice.toFixed(1) : '--';
-            document.getElementById('open-price').textContent =
-                data.openPrice ? data.openPrice.toFixed(1) : '--';
+            // 價格 (API 傳回 Raw Price * 100000，需要轉換為真實價格)
+            const priceMultiplier = 100000;
+            const currentPriceReal = data.currentPrice ? data.currentPrice / priceMultiplier : null;
+            const openPriceReal = data.openPrice ? data.openPrice / priceMultiplier : null;
 
-            if (data.currentPrice && data.openPrice) {
-                const diff = data.currentPrice - data.openPrice;
+            document.getElementById('current-price').textContent =
+                currentPriceReal ? currentPriceReal.toFixed(2) : '--';
+            document.getElementById('open-price').textContent =
+                openPriceReal ? openPriceReal.toFixed(2) : '--';
+
+            if (currentPriceReal && openPriceReal) {
+                const diff = currentPriceReal - openPriceReal;
                 const diffEl = document.getElementById('price-diff');
-                diffEl.textContent = (diff > 0 ? '+' : '') + diff.toFixed(1);
+                diffEl.textContent = (diff > 0 ? '+' : '') + diff.toFixed(2);
                 diffEl.className = diff > 0 ? 'text-green' : (diff < 0 ? 'text-red' : '');
             }
 

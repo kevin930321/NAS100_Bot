@@ -84,6 +84,13 @@ class ExecutionEngine extends EventEmitter {
             // 狀態對賬：詢問 cTrader 實際持倉
             await this.reconcilePositions();
 
+            // 重要：啟動時強制清除盯盤狀態
+            // 必須等待 07:01 的 cron 觸發才能開始盯盤
+            // 這可以防止重啟後自動使用舊的開盤價開始交易
+            this.isWatching = false;
+            this.todayOpenPrice = null;
+            console.log('⏳ 等待盯盤訊號 (07:01 cron 觸發)...');
+
         } catch (error) {
             console.error('❌ 初始化失敗:', error);
         }
@@ -519,11 +526,49 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
+     * 檢查是否在交易時段內
+     * 交易時段：台北時間 07:01 ~ 隔天 06:00 (對應美股交易時間)
+     * 冬令: 開盤 07:30，收盤 06:00
+     * 夏令: 開盤 06:30，收盤 05:00
+     */
+    isWithinTradingHours() {
+        const now = new Date();
+        const hour = now.getHours();
+        const minute = now.getMinutes();
+        const currentMinutes = hour * 60 + minute;
+
+        // 判斷夏令/冬令
+        const isDst = this.checkIsUsDst(now);
+
+        // 冬令時間：台北時間 07:30 - 隔天 06:00 (即 07:30-23:59 和 00:00-06:00)
+        // 夏令時間：台北時間 06:30 - 隔天 05:00 (即 06:30-23:59 和 00:00-05:00)
+        const openMinutes = isDst ? (6 * 60 + 30) : (7 * 60 + 30);  // 夏令 06:30，冬令 07:30
+        const closeMinutes = isDst ? (5 * 60) : (6 * 60);           // 夏令 05:00，冬令 06:00
+
+        // 交易時段跨越午夜
+        // 有效時段：開盤時間 ~ 23:59 或 00:00 ~ 收盤時間
+        if (currentMinutes >= openMinutes) {
+            // 開盤後 (07:30+ 或 06:30+)
+            return true;
+        } else if (currentMinutes < closeMinutes) {
+            // 隔天未收盤前 (00:00 ~ 06:00 或 00:00 ~ 05:00)
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * 執行策略邏輯
      */
     async executeStrategy() {
         if (!this.currentPrice || !this.todayOpenPrice) return;
         if (this.todayTradeDone || !this.isWatching) return;
+
+        // 檢查是否在交易時段內 (台北時間 07:01 - 06:00 隔天，即美股交易時間)
+        if (!this.isWithinTradingHours()) {
+            return; // 非交易時段，不執行策略
+        }
 
         // 修正：cTrader API v2 的 Raw Price 固定為真實價格 * 100,000
         // 不論 Symbol 的 digits 是多少 (例如 NAS100 是 2)，API 傳來的整數都是乘了 10^5
@@ -598,12 +643,14 @@ class ExecutionEngine extends EventEmitter {
             const slPriceReal = slPriceRaw / apiMultiplier;
 
             // 發送訂單
+            // orderType: MARKET=1, LIMIT=2, STOP=3
+            // tradeSide: BUY=1, SELL=2
             const ProtoOANewOrderReq = this.connection.proto.lookupType('ProtoOANewOrderReq');
             const order = ProtoOANewOrderReq.create({
                 ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
                 symbolId: symbolData.symbolId,
-                orderType: 'MARKET',
-                tradeSide: tradeType,
+                orderType: 1, // MARKET
+                tradeSide: type === 'long' ? 1 : 2, // BUY=1, SELL=2
                 volume: volume,
                 stopLoss: slPriceReal,   // 傳送真實價格 (e.g. 15000.50)
                 takeProfit: tpPriceReal, // 傳送真實價格

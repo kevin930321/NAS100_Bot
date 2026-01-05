@@ -312,11 +312,23 @@ const bot = new TradingBot();
     }
 })();
 
-// 定時狀態輸出
-cron.schedule('0,30 * * * * *', () => {
+// 定時狀態輸出 (使用即時帳戶餘額)
+cron.schedule('0,30 * * * * *', async () => {
     const status = bot.getStatus();
     if (status.connected) {
-        console.log(`📊 狀態: 餘額=$${status.balance?.toFixed(2) || 0} | 勝率=${status.winRate} | 盯盤=${status.isWatching ? '是' : '否'} | 今日完成=${status.todayTradeDone ? '是' : '否'}`);
+        // 嘗試取得即時餘額
+        let balance = status.balance;
+        if (bot.engine && bot.connection?.connected && bot.connection?.authenticated) {
+            try {
+                const accountInfo = await bot.engine.getAccountInfo();
+                if (accountInfo) {
+                    balance = accountInfo.balance;
+                }
+            } catch (e) {
+                // 忽略錯誤，使用原本的餘額
+            }
+        }
+        console.log(`📊 狀態: 餘額=$${balance?.toFixed(2) || 0} | 勝率=${status.winRate} | 盯盤=${status.isWatching ? '是' : '否'} | 今日完成=${status.todayTradeDone ? '是' : '否'}`);
     }
 });
 
