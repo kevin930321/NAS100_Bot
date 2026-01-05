@@ -808,6 +808,11 @@ class ExecutionEngine extends EventEmitter {
 
                 const openPrice = low + deltaOpen;
 
+                // Debug: 顯示這根 K 線的實際時間
+                const barTimeUtc = bar.utcTimestampInMinutes * 60000;
+                const barTimeTaipei = new Date(barTimeUtc).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+
+                console.log(`🔍 [Debug] K線時間: ${barTimeTaipei} (UTC: ${new Date(barTimeUtc).toISOString()})`);
                 console.log(`✅ 取得 cTrader 精確開盤價 (${openTimeTaipei.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei' })}): ${openPrice} (Raw Points)`);
                 return openPrice;
             } else {
