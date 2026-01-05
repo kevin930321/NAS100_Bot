@@ -379,25 +379,27 @@ class CTraderConnection extends EventEmitter {
      * 工具函數：取得 Payload Type ID
      */
     getPayloadTypeId(typeName) {
-        // 判斷是 OA 訊息還是 Common 訊息
-        let enumType;
-        let prefix;
+        let key;
 
         if (typeName.startsWith('ProtoOA')) {
-            // Open API Messages (e.g. ProtoOAApplicationAuthReq)
-            enumType = this.proto.lookupEnum('ProtoOAPayloadType');
-            prefix = 'PROTO_OA_';
+            // Open API Messages
+            // ProtoOAApplicationAuthReq -> APPLICATION_AUTH_REQ -> PROTO_OA_APPLICATION_AUTH_REQ
+            const baseName = typeName.substring(7); // Remove 'ProtoOA'
+            const snakeName = baseName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+            key = `PROTO_OA_${snakeName}`;
+
+            const enumType = this.proto.lookupEnum('ProtoOAPayloadType');
+            return enumType.values[key];
         } else {
-            // Common Messages (e.g. ProtoHeartbeatEvent)
-            enumType = this.proto.lookupEnum('ProtoPayloadType');
-            prefix = '';
+            // Common Messages
+            // ProtoHeartbeatEvent -> HEARTBEAT_EVENT
+            const baseName = typeName.substring(5); // Remove 'Proto'
+            const snakeName = baseName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+            key = snakeName;
+
+            const enumType = this.proto.lookupEnum('ProtoPayloadType');
+            return enumType.values[key];
         }
-
-        const key = `${prefix}${typeName.replace('ProtoOA', '').replace('Proto', '').replace('Req', '_REQ').replace('Res', '_RES').replace('Event', '_EVENT')}`;
-        // 修正: 有些命名可能不完全規則，例如 HEARTBEAT_EVENT
-        // 對於 ProtoHeartbeatEvent -> prefix="" -> HEARTBEAT_EVENT. Correct.
-
-        return enumType.values[key];
     }
 
     /**
