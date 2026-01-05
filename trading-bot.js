@@ -461,6 +461,15 @@ app.post('/api/action', async (req, res) => {
                     bot.engine.updateConfig(req.body.config);
                 }
                 break;
+
+            case 'fetchOpenPrice':
+                if (bot.engine) {
+                    const success = await bot.engine.fetchAndSetOpenPrice();
+                    if (!success) {
+                        return res.json({ success: false, message: '無法取得開盤價', state: bot.getStatus() });
+                    }
+                }
+                break;
         }
         res.json({ success: true, state: bot.getStatus() });
     } catch (e) {

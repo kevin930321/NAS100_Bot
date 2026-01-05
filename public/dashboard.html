@@ -398,6 +398,7 @@
             <div class="card-label">🎮 操作控制</div>
             <div class="actions-row">
                 <button class="btn-primary" onclick="toggleWatch()">👁️ 切換盯盤</button>
+                <button class="btn-success" onclick="fetchOpenPrice()">📊 取得開盤價</button>
                 <button class="btn-warning" onclick="resetDaily()">🔄 重置今日狀態</button>
                 <button class="btn-danger" onclick="closeAllPositions()">⚠️ 緊急平倉</button>
             </div>
@@ -580,6 +581,21 @@
         // 操作函數
         function toggleWatch() {
             doAction('toggleWatch');
+        }
+
+        async function fetchOpenPrice() {
+            const res = await fetch(API_URL + '/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'fetchOpenPrice' })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('✅ 開盤價已取得');
+                updateUI(data.state);
+            } else {
+                alert('❌ ' + (data.message || '取得開盤價失敗'));
+            }
         }
 
         function resetDaily() {
