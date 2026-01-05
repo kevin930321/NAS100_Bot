@@ -395,12 +395,31 @@ app.get('/health', (req, res) => {
     });
 });
 
-// 狀態 API
-app.get('/api/status', (req, res) => {
-    res.json({
-        ...bot.getStatus(),
-        logs: logs
-    });
+// 狀態 API (異步，取得即時帳戶餘額)
+app.get('/api/status', async (req, res) => {
+    try {
+        const status = bot.getStatus();
+
+        // 嘗試取得即時帳戶餘額
+        if (bot.engine && bot.connection?.connected) {
+            try {
+                const accountInfo = await bot.engine.getAccountInfo();
+                if (accountInfo) {
+                    status.balance = accountInfo.balance;
+                    status.leverage = accountInfo.leverage;
+                }
+            } catch (e) {
+                // 忽略錯誤，使用原本的餘額
+            }
+        }
+
+        res.json({
+            ...status,
+            logs: logs
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // 操作 API

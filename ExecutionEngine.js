@@ -52,22 +52,6 @@ class ExecutionEngine extends EventEmitter {
             console.log('🔄 Account Auth 成功，重新訂閱報價並同步持倉...');
             this.subscribeToMarketData();
             this.reconcilePositions(); // 關鍵修復：斷線重連後必須確認持倉狀態
-            this.connection.sendTraderReq().catch(err => console.error('❌ 查詢餘額失敗:', err.message));
-        });
-
-        // 監聽帳戶資訊更新 (餘額)
-        this.connection.on('trader-info', (trader) => {
-            if (trader.balance) {
-                this.balance = trader.balance / 100; // cTrader balance is in cents
-                console.log(`💰 餘額已更新: $${this.balance}`);
-            }
-        });
-
-        this.connection.on('trader-update', (trader) => {
-            if (trader.balance) {
-                this.balance = trader.balance / 100;
-                console.log(`💰 餘額已更新(推送): $${this.balance}`);
-            }
         });
     }
 
@@ -210,6 +194,46 @@ class ExecutionEngine extends EventEmitter {
         const payload = ProtoOAReconcileRes.decode(response.payload);
 
         return payload.position || [];
+    }
+
+    /**
+     * 取得帳戶資訊 (餘額、淨值等)
+     */
+    async getAccountInfo() {
+        try {
+            // 發送 ProtoOATraderReq
+            const ProtoOATraderReq = this.connection.proto.lookupType('ProtoOATraderReq');
+            const message = ProtoOATraderReq.create({
+                ctidTraderAccountId: parseInt(this.config.ctrader.accountId)
+            });
+
+            const response = await this.connection.send('ProtoOATraderReq', message);
+            const ProtoOATraderRes = this.connection.proto.lookupType('ProtoOATraderRes');
+            const payload = ProtoOATraderRes.decode(response.payload);
+
+            // 解析餘額 (根據 moneyDigits 轉換)
+            const moneyDigits = payload.trader.moneyDigits || 2;
+            const divisor = Math.pow(10, moneyDigits);
+
+            const accountInfo = {
+                balance: payload.trader.balance / divisor,
+                leverage: payload.trader.leverageInCents ? payload.trader.leverageInCents / 100 : null,
+                moneyDigits: moneyDigits
+            };
+
+            // 快取帳戶資訊
+            this.cachedAccountInfo = accountInfo;
+            this.cachedAccountInfoTime = Date.now();
+
+            return accountInfo;
+        } catch (error) {
+            console.error('❌ 取得帳戶資訊失敗:', error.message);
+            // 如果有快取且在 5 分鐘內，返回快取
+            if (this.cachedAccountInfo && Date.now() - this.cachedAccountInfoTime < 300000) {
+                return this.cachedAccountInfo;
+            }
+            return null;
+        }
     }
 
     /**
