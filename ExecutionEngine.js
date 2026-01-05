@@ -62,7 +62,7 @@ class ExecutionEngine extends EventEmitter {
         try {
             const state = await this.db.loadState();
             if (state) {
-                this.balance = state.balance || this.balance;
+                // 注意：balance 不再從資料庫載入，現在從 cTrader API 即時取得
                 this.wins = state.wins || 0;
                 this.losses = state.losses || 0;
                 this.trades = state.trades || [];
@@ -604,23 +604,22 @@ class ExecutionEngine extends EventEmitter {
             const symbolData = await this.getSymbolInfo(this.config.market.symbol);
             if (!symbolData) throw new Error('無法取得 Symbol 資訊');
 
-            // 1. 基礎計算: UserLots * LotSize
-            let volume = this.lotSize * symbolData.lotSize;
+            // cTrader Volume 計算：
+            // - cTrader volume 單位: 1 lot = 100 volume units (centilots)
+            // - 所以 0.1 lots = 10 volume units
+            // - 最小 volume 通常是 100 (= 0.01 lots) 或根據 broker 設定
 
-            // 2. 步長正規化 (Normalize to Step Volume)
-            // 例如: volume=1150, step=100 -> 1100
-            if (symbolData.stepVolume) {
-                volume = Math.floor(volume / symbolData.stepVolume) * symbolData.stepVolume;
+            // 計算 volume (lots * 100)
+            let volume = Math.round(this.lotSize * 100);
+
+            // 最小量檢查 (0.01 lots = 1 volume, 但通常最小是 0.1 lots = 10 volume)
+            const minVolume = 10; // 0.1 lots = 10 volume units (大部分 broker 的最小)
+            if (volume < minVolume) {
+                console.warn(`⚠️ 計算出的交易量 (${volume}) 小於最小限制 (${minVolume})，已自動修正為最小量。`);
+                volume = minVolume;
             }
 
-            // 3. 最小量檢查
-            if (volume < symbolData.minVolume) {
-                console.warn(`⚠️ 計算出的交易量 (${volume}) 小於最小限制 (${symbolData.minVolume})，已自動修正為最小量。`);
-                volume = symbolData.minVolume;
-            }
-
-            // 確保為整數 (cTrader volume 為 int64)
-            volume = Math.round(volume);
+            console.log(`📊 下單量: ${this.lotSize} lots = ${volume} volume units`);
 
             // 計算 TP/SL 價格 
             // 修正：內部運算使用 Raw Units (100,000 based)，但發送給 API 的 TP/SL 需要是真實價格 (Double)

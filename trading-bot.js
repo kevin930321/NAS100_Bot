@@ -184,19 +184,15 @@ class TradingBot {
         }
 
         // 盯盤時間到了
-        // 盯盤時間檢查 (時間到 OR 時間已過且尚未開始盯盤)
+        // 只在精確的盯盤時間 (07:01) 才觸發，不在之後的時間自動補觸發
+        // 這樣可以防止重啟後自動開始盯盤
         const isWatchTime = hour === target.hour && minute === target.minute;
-        const isAfterWatchTime = hour > target.hour || (hour === target.hour && minute > target.minute);
 
-        if ((isWatchTime || isAfterWatchTime) && this.engine && !this.engine.todayTradeDone) {
+        if (isWatchTime && this.engine && !this.engine.todayTradeDone) {
             // 如果尚未開始盯盤，嘗試啟動
             if (!this.engine.isWatching) {
-                // Log only once per minute to avoid spam, or rely on ExecutionEngine's internal checks
-                // 如果是剛好時間到，發送 Discord
-                if (isWatchTime) {
-                    console.log(`⏰ ${target.hour}:${target.minute.toString().padStart(2, '0')} 觸發盯盤機制！`);
-                    this.sendDiscord(`⏰ **觸發盯盤機制！** (${isDst ? '夏令' : '冬令'}時間 ${target.hour}:${target.minute.toString().padStart(2, '0')})`);
-                }
+                console.log(`⏰ ${target.hour}:${target.minute.toString().padStart(2, '0')} 觸發盯盤機制！`);
+                this.sendDiscord(`⏰ **觸發盯盤機制！** (${isDst ? '夏令' : '冬令'}時間 ${target.hour}:${target.minute.toString().padStart(2, '0')})`);
 
                 // 嘗試開始盯盤 (內部會去 fetch 開盤價，失敗則下次 checkTime 再試)
                 this.engine.startWatching();
