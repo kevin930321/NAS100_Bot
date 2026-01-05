@@ -31,13 +31,11 @@ module.exports = {
         mode: getEnvString('CTRADER_MODE', 'demo'),
         accountId: getEnvString('CTRADER_ACCOUNT_ID', ''),
 
-        // API Endpoints
+        // API Endpoints (更新於 2026-01: 使用 ctraderapi.com)
         host: getEnvString('CTRADER_MODE', 'demo') === 'demo'
-            ? 'demo.ctrader.com'
-            : 'live.ctrader.com',
-        port: getEnvString('CTRADER_MODE', 'demo') === 'demo'
-            ? 5032
-            : 5035
+            ? 'demo.ctraderapi.com'
+            : 'live.ctraderapi.com',
+        port: 5035  // Demo 和 Live 都使用 5035
     },
 
     // MongoDB 設定
