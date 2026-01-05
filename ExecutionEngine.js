@@ -808,7 +808,7 @@ class ExecutionEngine extends EventEmitter {
 
                 const openPrice = low + deltaOpen;
 
-                console.log(`✅ 取得 cTrader 精確開盤價 (${openTime.toLocaleTimeString()}): ${openPrice} (Raw Points)`);
+                console.log(`✅ 取得 cTrader 精確開盤價 (${openTimeTaipei.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei' })}): ${openPrice} (Raw Points)`);
                 return openPrice;
             } else {
                 console.warn('⚠️ 該時間點無 K 線資料 (可能尚未開盤或無成交)');
