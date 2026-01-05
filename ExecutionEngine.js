@@ -141,25 +141,13 @@ class ExecutionEngine extends EventEmitter {
 
                 console.log(`🕒 當前會話起始時間: ${sessionOpen.toLocaleString()}`);
 
-                let hasTodayTrade = false;
-
+                // 只記錄持倉資訊，不修改 todayTradeDone 狀態
+                // todayTradeDone 只應該在成功下單時才設為 true（由 handleExecutionEvent 處理）
                 this.positions.forEach(p => {
-                    // 判斷持倉時間是否晚於會話開始時間
-                    if (p.openTime >= sessionOpen) {
-                        hasTodayTrade = true;
-                        console.log(`   - 發現本會話開倉訂單: ${p.id} (${p.openTime.toLocaleString()})`);
-                    } else {
-                        console.log(`   - 發現過往持倉訂單: ${p.id} (${p.openTime.toLocaleString()})`);
-                    }
+                    console.log(`   - 持倉: ${p.id} | ${p.type} | 開倉時間: ${p.openTime.toLocaleString()}`);
                 });
 
-                // 只有當確實有本會話開倉的記錄時，才標記為 true
-                if (hasTodayTrade) {
-                    this.todayTradeDone = true;
-                    console.log('🔒 本會話任務標記為已完成');
-                } else {
-                    console.log('🔓 僅持有過往倉位，本會話尚未開新倉，允許繼續交易');
-                }
+                console.log('ℹ️ 持倉同步完成，todayTradeDone 狀態維持不變');
 
                 await this.saveState();
                 this.emit('positions-reconciled', this.positions);
@@ -451,11 +439,17 @@ class ExecutionEngine extends EventEmitter {
                 if (deal.closePositionDetail) {
                     this.handleTradeClosed(deal);
                 } else {
-                    // 開倉交易
+                    // 開倉交易成功 - 標記今日已交易
+                    this.todayTradeDone = true;
+                    this.saveState();
+                    console.log('✅ 開倉成功，今日交易任務完成');
                     this.emit('order-filled', execution);
                 }
             } else {
                 // 向下相容舊邏輯 (雖然 ORDER_FILLED 通常都有 Deal)
+                this.todayTradeDone = true;
+                this.saveState();
+                console.log('✅ 訂單成交，今日交易任務完成');
                 this.emit('order-filled', execution);
             }
         }
@@ -660,8 +654,10 @@ class ExecutionEngine extends EventEmitter {
 
             const response = await this.connection.send('ProtoOANewOrderReq', order);
 
-            this.todayTradeDone = true;
-            await this.saveState();
+            // 注意：這裡不標記 todayTradeDone
+            // 只有收到 ProtoOAExecutionEvent (成交) 才會標記，這部分由 handleExecutionEvent 處理
+            // 這可以防止「訂單失敗但被標記已交易」的情況
+            console.log('📨 訂單發送成功，等待執行...');
 
             // 發送 Discord 通知
             this.emit('trade-opened', {
