@@ -200,6 +200,14 @@ class ExecutionEngine extends EventEmitter {
      * 取得帳戶資訊 (餘額、淨值、保證金等)
      */
     async getAccountInfo() {
+        // 檢查是否已連線且已認證
+        if (!this.connection?.connected || !this.connection?.authenticated) {
+            if (this.cachedAccountInfo && Date.now() - this.cachedAccountInfoTime < 300000) {
+                return this.cachedAccountInfo;
+            }
+            return null;
+        }
+
         try {
             // 1. 取得帳戶基本資訊
             const ProtoOATraderReq = this.connection.proto.lookupType('ProtoOATraderReq');
@@ -215,45 +223,23 @@ class ExecutionEngine extends EventEmitter {
             const divisor = Math.pow(10, moneyDigits);
             const balance = traderPayload.trader.balance / divisor;
 
-            // 2. 取得未實現損益
-            let unrealizedPnL = 0;
-            try {
-                const ProtoOAGetPositionUnrealizedPnLReq = this.connection.proto.lookupType('ProtoOAGetPositionUnrealizedPnLReq');
-                const pnlMessage = ProtoOAGetPositionUnrealizedPnLReq.create({
-                    ctidTraderAccountId: parseInt(this.config.ctrader.accountId)
-                });
-
-                const pnlResponse = await this.connection.send('ProtoOAGetPositionUnrealizedPnLReq', pnlMessage);
-                const ProtoOAGetPositionUnrealizedPnLRes = this.connection.proto.lookupType('ProtoOAGetPositionUnrealizedPnLRes');
-                const pnlPayload = ProtoOAGetPositionUnrealizedPnLRes.decode(pnlResponse.payload);
-
-                const pnlMoneyDigits = pnlPayload.moneyDigits || moneyDigits;
-                const pnlDivisor = Math.pow(10, pnlMoneyDigits);
-
-                // 加總所有持倉的未實現損益
-                if (pnlPayload.positionUnrealizedPnL) {
-                    for (const pos of pnlPayload.positionUnrealizedPnL) {
-                        unrealizedPnL += (pos.netUnrealizedPnL || 0) / pnlDivisor;
-                    }
-                }
-            } catch (e) {
-                // 如果無法取得未實現損益，忽略
-            }
-
-            // 3. 取得持倉資訊計算已用保證金
+            // 2. 取得持倉資訊計算已用保證金
             let usedMargin = 0;
+            let unrealizedPnL = 0;
             try {
                 const positions = await this.getOpenPositions();
                 for (const pos of positions) {
                     const posMoneyDigits = pos.moneyDigits || moneyDigits;
                     const posDivisor = Math.pow(10, posMoneyDigits);
                     usedMargin += (pos.usedMargin || 0) / posDivisor;
+                    // 從 swap 和 commission 估算 (實際 PnL 需要用當前價格計算)
+                    unrealizedPnL += ((pos.swap || 0) + (pos.commission || 0)) / posDivisor;
                 }
             } catch (e) {
                 // 忽略
             }
 
-            // 4. 計算衍生值
+            // 3. 計算衍生值 (淨值 = 餘額 + 未實現損益，但因為無法精確計算 PnL，暫時用餘額)
             const equity = balance + unrealizedPnL;
             const freeMargin = equity - usedMargin;
 
