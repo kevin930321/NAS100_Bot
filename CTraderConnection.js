@@ -254,7 +254,12 @@ class CTraderConnection extends EventEmitter {
         const payloadTypeName = this.getPayloadTypeName(message.payloadType);
 
         // 過濾掉頻繁的訊息，避免 log 洗版
-        const quietMessages = ['ProtoOASpotEvent', 'ProtoHeartbeatEvent'];
+        const quietMessages = [
+            'ProtoOASpotEvent',
+            'ProtoHeartbeatEvent',
+            'ProtoOATraderRes',
+            'ProtoOAReconcileRes'
+        ];
         if (!quietMessages.includes(payloadTypeName)) {
             console.log(`📨 收到訊息: ${payloadTypeName}`);
         }
@@ -284,6 +289,13 @@ class CTraderConnection extends EventEmitter {
                 const errorPayload = ErrorRes.decode(message.payload);
                 console.error(`❌ API 錯誤: ${errorPayload.errorCode} - ${errorPayload.description}`);
                 this.emit('api-error', errorPayload);
+                break;
+
+            case 'ProtoOAOrderErrorEvent':
+                const OrderErrorEvent = this.proto.lookupType('ProtoOAOrderErrorEvent');
+                const orderError = OrderErrorEvent.decode(message.payload);
+                console.error(`❌ 訂單錯誤: ${orderError.errorCode} - ${orderError.description || '無描述'}`);
+                this.emit('order-error', orderError);
                 break;
 
             case 'ProtoHeartbeatEvent':
