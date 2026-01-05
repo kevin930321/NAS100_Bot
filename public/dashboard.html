@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAS100 cTrader Bot Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #f8fafc;
+            --accent-color: #3b82f6;
+            --success-color: #22c55e;
+            --danger-color: #ef4444;
+            --warning-color: #eab308;
+            --purple-color: #8b5cf6;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+            display: inline-block;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .status-connected {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success-color);
+        }
+
+        .status-disconnected {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger-color);
+        }
+
+        .status-watching {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--accent-color);
+        }
+
+        .status-idle {
+            background: rgba(100, 116, 139, 0.2);
+            color: #94a3b8;
+        }
+
+        .price-display {
+            text-align: center;
+            font-size: 3rem;
+            font-family: 'Roboto Mono', monospace;
+            margin: 10px 0;
+            font-weight: 700;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .card-label {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+        }
+
+        .stat-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .text-green {
+            color: var(--success-color);
+        }
+
+        .text-red {
+            color: var(--danger-color);
+        }
+
+        .text-blue {
+            color: var(--accent-color);
+        }
+
+        /* 策略參數表單 */
+        .params-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: white;
+            font-size: 0.9rem;
+        }
+
+        /* 按鈕 */
+        button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+            font-size: 0.9rem;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger-color);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--warning-color);
+            color: black;
+        }
+
+        .btn-success {
+            background: var(--success-color);
+            color: white;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        .actions-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        /* 持倉卡片 */
+        .position-card {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 4px solid;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .position-long {
+            border-left-color: var(--success-color);
+        }
+
+        .position-short {
+            border-left-color: var(--danger-color);
+        }
+
+        /* 日誌區塊 */
+        .log-container {
+            background: #000;
+            padding: 15px;
+            border-radius: 12px;
+            font-family: 'Roboto Mono', monospace;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 0.8rem;
+            color: #33ff33;
+        }
+
+        .log-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .log-container::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        .log-container::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+
+        /* 無持倉提示 */
+        .no-positions {
+            text-align: center;
+            color: #64748b;
+            padding: 20px;
+            font-size: 0.9rem;
+        }
+
+        /* 響應式 */
+        @media (max-width: 600px) {
+            .price-display {
+                font-size: 2.5rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- 標題與連線狀態 -->
+        <div class="header">
+            <h1>🤖 NAS100 cTrader Bot</h1>
+            <div class="status-row">
+                <span id="connection-status" class="status-badge status-disconnected">⚪ 連線中...</span>
+                <span id="watching-status" class="status-badge status-idle">👁️ 待機</span>
+                <span id="trade-status" class="status-badge status-idle">📊 今日未交易</span>
+            </div>
+        </div>
+
+        <!-- 價格顯示 -->
+        <div class="card">
+            <div class="card-label">即時價格</div>
+            <div class="price-display" id="current-price">--</div>
+            <div style="text-align: center; font-size: 0.95rem; color: #94a3b8;">
+                開盤價: <span id="open-price" style="color: white; font-weight: 600;">--</span>
+                &nbsp;|&nbsp;
+                價差: <span id="price-diff" style="font-weight: 600;">--</span>
+            </div>
+        </div>
+
+        <!-- 帳戶統計 -->
+        <div class="card">
+            <div class="card-label">📊 帳戶統計</div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">餘額</div>
+                    <div class="stat-value text-green" id="balance">$--</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">勝率</div>
+                    <div class="stat-value" id="win-rate">--</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">總勝場</div>
+                    <div class="stat-value text-green" id="wins">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">總敗場</div>
+                    <div class="stat-value text-red" id="losses">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 策略參數 -->
+        <div class="card">
+            <div class="card-label">
+                ⚙️ 策略參數
+                <button class="btn-primary" onclick="saveConfig()" style="padding: 6px 12px; font-size: 0.8rem;">💾
+                    儲存</button>
+            </div>
+            <div class="params-grid">
+                <div class="form-group">
+                    <label>Entry Offset</label>
+                    <input type="number" id="cfg-entryOffset" value="10">
+                </div>
+                <div class="form-group">
+                    <label>Long TP</label>
+                    <input type="number" id="cfg-longTP" value="8">
+                </div>
+                <div class="form-group">
+                    <label>Short TP</label>
+                    <input type="number" id="cfg-shortTP" value="5">
+                </div>
+                <div class="form-group">
+                    <label>Long SL</label>
+                    <input type="number" id="cfg-longSL" value="1000">
+                </div>
+                <div class="form-group">
+                    <label>Short SL</label>
+                    <input type="number" id="cfg-shortSL" value="1000">
+                </div>
+                <div class="form-group">
+                    <label>Lot Size</label>
+                    <input type="number" id="cfg-lotSize" value="0.1" step="0.01">
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作按鈕 -->
+        <div class="card">
+            <div class="card-label">🎮 操作控制</div>
+            <div class="actions-row">
+                <button class="btn-primary" onclick="toggleWatch()">👁️ 切換盯盤</button>
+                <button class="btn-warning" onclick="resetDaily()">🔄 重置今日狀態</button>
+                <button class="btn-danger" onclick="closeAllPositions()">⚠️ 緊急平倉</button>
+            </div>
+        </div>
+
+        <!-- 持倉列表 -->
+        <div class="card">
+            <div class="card-label"><span>📈 當前持倉 (<span id="position-count">0</span>)</span></div>
+            <div id="positions-list">
+                <div class="no-positions">目前無持倉</div>
+            </div>
+        </div>
+
+        <!-- 日誌 -->
+        <div class="card">
+            <div class="card-label">📜 即時日誌</div>
+            <div class="log-container" id="logs">
+                <div>等待日誌...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api';
+
+        // 更新 UI
+        function updateUI(data) {
+            // 連線狀態
+            const connEl = document.getElementById('connection-status');
+            if (data.connected && data.authenticated) {
+                connEl.textContent = '🟢 已連線';
+                connEl.className = 'status-badge status-connected';
+            } else if (data.connected) {
+                connEl.textContent = '🟡 連線中...';
+                connEl.className = 'status-badge status-watching';
+            } else {
+                connEl.textContent = '🔴 未連線';
+                connEl.className = 'status-badge status-disconnected';
+            }
+
+            // 盯盤狀態
+            const watchEl = document.getElementById('watching-status');
+            if (data.isWatching) {
+                watchEl.textContent = '👁️ 盯盤中';
+                watchEl.className = 'status-badge status-watching';
+            } else {
+                watchEl.textContent = '💤 待機';
+                watchEl.className = 'status-badge status-idle';
+            }
+
+            // 今日交易狀態
+            const tradeEl = document.getElementById('trade-status');
+            if (data.todayTradeDone) {
+                tradeEl.textContent = '✅ 今日已交易';
+                tradeEl.className = 'status-badge status-connected';
+            } else {
+                tradeEl.textContent = '⏳ 等待進場';
+                tradeEl.className = 'status-badge status-idle';
+            }
+
+            // 價格
+            document.getElementById('current-price').textContent =
+                data.currentPrice ? data.currentPrice.toFixed(1) : '--';
+            document.getElementById('open-price').textContent =
+                data.openPrice ? data.openPrice.toFixed(1) : '--';
+
+            if (data.currentPrice && data.openPrice) {
+                const diff = data.currentPrice - data.openPrice;
+                const diffEl = document.getElementById('price-diff');
+                diffEl.textContent = (diff > 0 ? '+' : '') + diff.toFixed(1);
+                diffEl.className = diff > 0 ? 'text-green' : (diff < 0 ? 'text-red' : '');
+            }
+
+            // 帳戶統計
+            document.getElementById('balance').textContent = '$' + (data.balance || 0).toFixed(2);
+            document.getElementById('win-rate').textContent = data.winRate || '--';
+            document.getElementById('wins').textContent = data.wins || 0;
+            document.getElementById('losses').textContent = data.losses || 0;
+
+            // 策略參數 (只在首次載入時填入)
+            if (data.config && !window.configLoaded) {
+                document.getElementById('cfg-entryOffset').value = data.config.entryOffset || 10;
+                document.getElementById('cfg-longTP').value = data.config.longTP || 8;
+                document.getElementById('cfg-shortTP').value = data.config.shortTP || 5;
+                document.getElementById('cfg-longSL').value = data.config.longSL || 1000;
+                document.getElementById('cfg-shortSL').value = data.config.shortSL || 1000;
+                document.getElementById('cfg-lotSize').value = data.config.lotSize || 0.1;
+                window.configLoaded = true;
+            }
+
+            // 持倉列表
+            const positions = data.positions || [];
+            document.getElementById('position-count').textContent = positions.length;
+            const posListEl = document.getElementById('positions-list');
+
+            if (positions.length === 0) {
+                posListEl.innerHTML = '<div class="no-positions">目前無持倉</div>';
+            } else {
+                posListEl.innerHTML = positions.map(pos => {
+                    const typeClass = pos.type === 'long' ? 'position-long' : 'position-short';
+                    const typeIcon = pos.type === 'long' ? '📈' : '📉';
+                    return `
+                        <div class="position-card ${typeClass}">
+                            <div>
+                                <div style="font-weight: 700; font-size: 1.1rem;">
+                                    ${typeIcon} ${pos.type.toUpperCase()}
+                                </div>
+                                <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
+                                    Entry: ${pos.entryPrice?.toFixed(1) || '--'} | Volume: ${pos.volume || '--'}
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 0.8rem; color: #64748b;">ID: ${pos.id || '--'}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // 日誌
+            if (data.logs && Array.isArray(data.logs)) {
+                const logsHtml = data.logs.map(log => `<div>${log}</div>`).join('');
+                const logContainer = document.getElementById('logs');
+                if (logContainer.innerHTML !== logsHtml) {
+                    logContainer.innerHTML = logsHtml;
+                }
+            }
+        }
+
+        // API 請求
+        async function fetchStatus() {
+            try {
+                const res = await fetch(API_URL + '/status');
+                const data = await res.json();
+                updateUI(data);
+            } catch (e) {
+                console.error('Fetch error:', e);
+            }
+        }
+
+        async function doAction(action, config = null) {
+            try {
+                const body = { action };
+                if (config) body.config = config;
+
+                const res = await fetch(API_URL + '/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    updateUI(data.state);
+                } else {
+                    alert('操作失敗: ' + (data.error || '未知錯誤'));
+                }
+            } catch (e) {
+                alert('請求失敗: ' + e.message);
+            }
+        }
+
+        // 操作函數
+        function toggleWatch() {
+            doAction('toggleWatch');
+        }
+
+        function resetDaily() {
+            if (confirm('確定要重置今日交易狀態嗎？')) {
+                doAction('reset');
+            }
+        }
+
+        function closeAllPositions() {
+            if (confirm('⚠️ 確定要緊急平倉所有持倉嗎？此操作無法復原！')) {
+                doAction('closePositions');
+            }
+        }
+
+        function saveConfig() {
+            const config = {
+                entryOffset: document.getElementById('cfg-entryOffset').value,
+                longTP: document.getElementById('cfg-longTP').value,
+                shortTP: document.getElementById('cfg-shortTP').value,
+                longSL: document.getElementById('cfg-longSL').value,
+                shortSL: document.getElementById('cfg-shortSL').value,
+                lotSize: document.getElementById('cfg-lotSize').value
+            };
+            doAction('updateConfig', config);
+            alert('✅ 策略參數已儲存');
+        }
+
+        // 初始化
+        fetchStatus();
+        setInterval(fetchStatus, 2000);
+    </script>
+</body>
+
+</html>
