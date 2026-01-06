@@ -8,8 +8,10 @@ require('dotenv').config();
 
 const cron = require('node-cron');
 const https = require('https');
+const http = require('http');
 const express = require('express');
 const path = require('path');
+const { Server } = require('socket.io');
 
 // 載入配置與模組
 const config = require('./config');
@@ -22,6 +24,7 @@ class TradingBot {
         // cTrader 連線與交易引擎
         this.connection = null;
         this.engine = null;
+        this.io = null; // Socket.IO 伺服器
 
         // 時間追蹤
         this.lastDate = null;
@@ -79,6 +82,10 @@ class TradingBot {
         this.engine.on('trade-opened', (trade) => {
             const msg = `**${trade.type === 'long' ? '📈 做多' : '📉 做空'}** | 價格: ${trade.price} | TP: ${trade.tp} | SL: ${trade.sl}`;
             this.sendDiscord(msg);
+            // Socket.IO 推送
+            if (this.io) {
+                this.io.emit('trade-opened', trade);
+            }
         });
 
         // 平倉事件
@@ -87,6 +94,10 @@ class TradingBot {
             const typeStr = trade.type === 'long' ? '多單' : '空單';
             const msg = `${icon} **${typeStr}平倉** | 損益: $${trade.profit.toFixed(2)} | 餘額: $${trade.balance.toFixed(2)}`;
             this.sendDiscord(msg);
+            // Socket.IO 推送
+            if (this.io) {
+                this.io.emit('trade-closed', trade);
+            }
         });
 
         this.engine.on('trade-error', (error) => {
@@ -96,6 +107,41 @@ class TradingBot {
         // 連線事件
         this.connection.on('reconnect-failed', () => {
             this.sendDiscord('⚠️ cTrader 重連失敗，請檢查連線');
+        });
+
+        // === Socket.IO 即時推送事件 ===
+
+        // 價格更新 (節流：最多每 500ms 推送一次)
+        let lastPricePush = 0;
+        this.engine.on('price-update', (data) => {
+            if (this.io && Date.now() - lastPricePush >= 500) {
+                lastPricePush = Date.now();
+                // 附加即時帳戶資訊
+                const accountInfo = this.engine.calculateRealTimeAccountInfo();
+                this.io.emit('realtime-update', {
+                    ...data,
+                    ...accountInfo,
+                    positions: this.engine.positions,
+                    isWatching: this.engine.isWatching,
+                    todayTradeDone: this.engine.todayTradeDone,
+                    wins: this.engine.wins,
+                    losses: this.engine.losses
+                });
+            }
+        });
+
+        // 帳戶更新 (交易完成後)
+        this.engine.on('account-update', (data) => {
+            if (this.io) {
+                this.io.emit('account-update', data);
+            }
+        });
+
+        // 持倉同步完成
+        this.engine.on('positions-reconciled', (positions) => {
+            if (this.io) {
+                this.io.emit('positions-update', { positions });
+            }
         });
     }
 
@@ -483,10 +529,43 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// 啟動 Web Server
+// 啟動 Web Server (使用 http.createServer 以便綁定 Socket.IO)
 const PORT = config.server?.port || process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = http.createServer(app);
+
+// 初始化 Socket.IO
+const io = new Server(server, {
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST']
+    }
+});
+
+// 將 io 注入到 bot
+bot.io = io;
+
+// Socket.IO 連線處理
+io.on('connection', (socket) => {
+    console.log('🔌 Dashboard 客戶端已連線');
+
+    // 連線時立即推送當前狀態
+    const status = bot.getStatus();
+    if (bot.engine) {
+        const accountInfo = bot.engine.calculateRealTimeAccountInfo();
+        socket.emit('initial-state', {
+            ...status,
+            ...accountInfo
+        });
+    }
+
+    socket.on('disconnect', () => {
+        console.log('🔌 Dashboard 客戶端已斷開');
+    });
+});
+
+server.listen(PORT, () => {
     console.log(`🌐 Web Dashboard 啟動於 http://localhost:${PORT}`);
+    console.log(`🔌 Socket.IO 即時推送已啟用`);
 });
 
 module.exports = bot;

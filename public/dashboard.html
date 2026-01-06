@@ -546,16 +546,217 @@
             }
         }
 
-        // API 請求
+        // === Socket.IO 即時更新 ===
+        let socket = null;
+        let socketConnected = false;
+
+        function initSocketIO() {
+            // 動態載入 Socket.IO 客戶端
+            const script = document.createElement('script');
+            script.src = '/socket.io/socket.io.js';
+            script.onload = () => {
+                socket = io();
+
+                socket.on('connect', () => {
+                    console.log('🔌 Socket.IO 已連線');
+                    socketConnected = true;
+                    // 更新連線狀態指示
+                    const connEl = document.getElementById('connection-status');
+                    if (connEl) {
+                        connEl.textContent = '🟢 即時連線';
+                        connEl.className = 'status-badge status-connected';
+                    }
+                });
+
+                socket.on('disconnect', () => {
+                    console.log('🔌 Socket.IO 已斷線');
+                    socketConnected = false;
+                });
+
+                // 初始狀態
+                socket.on('initial-state', (data) => {
+                    console.log('📊 收到初始狀態');
+                    updateUI(data);
+                });
+
+                // 即時更新 (價格 + 帳戶資訊)
+                socket.on('realtime-update', (data) => {
+                    updateRealtimeUI(data);
+                });
+
+                // 帳戶更新
+                socket.on('account-update', (data) => {
+                    console.log('💰 帳戶更新');
+                    if (data.balance !== undefined) {
+                        document.getElementById('balance').textContent = '$' + data.balance.toFixed(2);
+                    }
+                    if (data.wins !== undefined) {
+                        document.getElementById('wins').textContent = data.wins;
+                    }
+                    if (data.losses !== undefined) {
+                        document.getElementById('losses').textContent = data.losses;
+                    }
+                });
+
+                // 持倉更新
+                socket.on('positions-update', (data) => {
+                    console.log('📈 持倉更新');
+                    updatePositionsList(data.positions || []);
+                });
+
+                // 交易事件
+                socket.on('trade-opened', (trade) => {
+                    console.log('📈 開倉通知:', trade);
+                });
+
+                socket.on('trade-closed', (trade) => {
+                    console.log('📉 平倉通知:', trade);
+                });
+            };
+            document.head.appendChild(script);
+        }
+
+        // 即時 UI 更新 (輕量版，不更新日誌)
+        function updateRealtimeUI(data) {
+            const priceMultiplier = 100000;
+            const currentPriceReal = data.price ? data.price / priceMultiplier : null;
+            const openPriceReal = data.openPrice ? data.openPrice / priceMultiplier : null;
+
+            // 價格
+            if (currentPriceReal) {
+                document.getElementById('current-price').textContent = currentPriceReal.toFixed(2);
+            }
+            if (openPriceReal) {
+                document.getElementById('open-price').textContent = openPriceReal.toFixed(2);
+            }
+
+            // 價差
+            if (currentPriceReal && openPriceReal) {
+                const diff = currentPriceReal - openPriceReal;
+                const diffEl = document.getElementById('price-diff');
+                diffEl.textContent = (diff > 0 ? '+' : '') + diff.toFixed(2);
+                diffEl.className = diff > 0 ? 'text-green' : (diff < 0 ? 'text-red' : '');
+            }
+
+            // 帳戶統計
+            if (data.balance !== undefined) {
+                document.getElementById('balance').textContent = '$' + data.balance.toFixed(2);
+            }
+            if (data.equity !== undefined) {
+                const equityEl = document.getElementById('equity');
+                equityEl.textContent = '$' + data.equity.toFixed(2);
+                // 根據未實現損益設定顏色
+                if (data.unrealizedPnL > 0) {
+                    equityEl.className = 'stat-value text-green';
+                } else if (data.unrealizedPnL < 0) {
+                    equityEl.className = 'stat-value text-red';
+                } else {
+                    equityEl.className = 'stat-value';
+                }
+            }
+            if (data.usedMargin !== undefined) {
+                document.getElementById('usedMargin').textContent = '$' + data.usedMargin.toFixed(2);
+            }
+            if (data.freeMargin !== undefined) {
+                document.getElementById('freeMargin').textContent = '$' + data.freeMargin.toFixed(2);
+            }
+            if (data.wins !== undefined && data.losses !== undefined) {
+                document.getElementById('wins').textContent = data.wins;
+                document.getElementById('losses').textContent = data.losses;
+                const total = data.wins + data.losses;
+                document.getElementById('win-rate').textContent = total > 0 
+                    ? ((data.wins / total) * 100).toFixed(1) + '%' 
+                    : '--';
+            }
+            if (data.leverage) {
+                document.getElementById('leverage').textContent = '1:' + data.leverage;
+            }
+
+            // 狀態徽章
+            const watchEl = document.getElementById('watching-status');
+            if (data.isWatching) {
+                watchEl.textContent = '👁️ 盯盤中';
+                watchEl.className = 'status-badge status-watching';
+            } else {
+                watchEl.textContent = '💤 待機';
+                watchEl.className = 'status-badge status-idle';
+            }
+
+            const tradeEl = document.getElementById('trade-status');
+            if (data.todayTradeDone) {
+                tradeEl.textContent = '✅ 今日已交易';
+                tradeEl.className = 'status-badge status-connected';
+            } else {
+                tradeEl.textContent = '⏳ 等待進場';
+                tradeEl.className = 'status-badge status-idle';
+            }
+
+            // 持倉列表
+            if (data.positions) {
+                updatePositionsList(data.positions);
+            }
+        }
+
+        // 更新持倉列表
+        function updatePositionsList(positions) {
+            document.getElementById('position-count').textContent = positions.length;
+            const posListEl = document.getElementById('positions-list');
+
+            if (positions.length === 0) {
+                posListEl.innerHTML = '<div class="no-positions">目前無持倉</div>';
+            } else {
+                posListEl.innerHTML = positions.map(pos => {
+                    const typeClass = pos.type === 'long' ? 'position-long' : 'position-short';
+                    const typeIcon = pos.type === 'long' ? '📈' : '📉';
+                    return `
+                        <div class="position-card ${typeClass}">
+                            <div>
+                                <div style="font-weight: 700; font-size: 1.1rem;">
+                                    ${typeIcon} ${pos.type.toUpperCase()}
+                                </div>
+                                <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
+                                    Entry: ${pos.entryPrice?.toFixed(1) || '--'} | Volume: ${pos.volume || '--'}
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 0.8rem; color: #64748b;">ID: ${pos.id || '--'}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+
+        // API 請求 (降級方案)
         async function fetchStatus() {
+            // 如果 Socket.IO 已連線，跳過輪詢 (只每 10 秒同步一次日誌)
+            if (socketConnected && Date.now() - lastLogFetch < 10000) {
+                return;
+            }
+            lastLogFetch = Date.now();
+
             try {
                 const res = await fetch(API_URL + '/status');
                 const data = await res.json();
-                updateUI(data);
+                // 只更新日誌 (其他由 Socket.IO 即時更新)
+                if (socketConnected) {
+                    if (data.logs && Array.isArray(data.logs)) {
+                        const logsHtml = data.logs.map(log => `<div>${log}</div>`).join('');
+                        const logContainer = document.getElementById('logs');
+                        if (logContainer.innerHTML !== logsHtml) {
+                            logContainer.innerHTML = logsHtml;
+                        }
+                    }
+                } else {
+                    // Socket.IO 未連線，完整更新
+                    updateUI(data);
+                }
             } catch (e) {
                 console.error('Fetch error:', e);
             }
         }
+
+        let lastLogFetch = 0;
 
         async function doAction(action, config = null) {
             try {
@@ -624,8 +825,9 @@
         }
 
         // 初始化
-        fetchStatus();
-        setInterval(fetchStatus, 2000);
+        initSocketIO(); // 優先使用 Socket.IO
+        fetchStatus();  // 首次載入取得完整資料
+        setInterval(fetchStatus, 2000); // 降級輪詢 (Socket.IO 連線時會跳過)
     </script>
 </body>
 

@@ -414,10 +414,56 @@ class ExecutionEngine extends EventEmitter {
             const ask = typeof spot.ask === 'number' ? spot.ask : (spot.ask.toNumber ? spot.ask.toNumber() : Number(spot.ask));
 
             this.currentPrice = (bid + ask) / 2;
+            this.currentBid = bid;
+            this.currentAsk = ask;
+
+            // 發出價格更新事件 (用於 Socket.IO 即時推送)
+            this.emit('price-update', {
+                price: this.currentPrice,
+                bid: bid,
+                ask: ask,
+                openPrice: this.todayOpenPrice,
+                timestamp: Date.now()
+            });
 
             // 執行策略邏輯
             this.executeStrategy();
         }
+    }
+
+    /**
+     * 計算即時帳戶資訊（基於當前價格）
+     * 用於 Socket.IO 即時推送，不需要呼叫 API
+     */
+    calculateRealTimeAccountInfo() {
+        // 計算未實現損益
+        let unrealizedPnL = 0;
+        const apiMultiplier = 100000;
+
+        if (this.currentPrice && this.positions.length > 0) {
+            for (const pos of this.positions) {
+                const entryPrice = pos.entryPrice;
+                const currentPrice = this.currentPrice / apiMultiplier;
+                const volume = pos.volume / 100; // volume 單位是 centilots
+
+                if (pos.type === 'long') {
+                    unrealizedPnL += (currentPrice - entryPrice) * volume;
+                } else {
+                    unrealizedPnL += (entryPrice - currentPrice) * volume;
+                }
+            }
+        }
+
+        const equity = this.balance + unrealizedPnL;
+
+        return {
+            balance: this.balance,
+            equity: equity,
+            unrealizedPnL: unrealizedPnL,
+            usedMargin: this.cachedAccountInfo?.usedMargin || 0,
+            freeMargin: equity - (this.cachedAccountInfo?.usedMargin || 0),
+            leverage: this.cachedAccountInfo?.leverage || null
+        };
     }
 
     /**
@@ -525,6 +571,14 @@ class ExecutionEngine extends EventEmitter {
 
         // 發送事件通知
         this.emit('trade-closed', tradeRecord);
+
+        // 發送帳戶更新事件 (用於 Socket.IO 即時推送)
+        this.emit('account-update', {
+            balance: this.balance,
+            wins: this.wins,
+            losses: this.losses,
+            positions: this.positions
+        });
     }
 
     /**
