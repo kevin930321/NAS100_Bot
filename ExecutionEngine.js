@@ -476,10 +476,12 @@ class ExecutionEngine extends EventEmitter {
         const ProtoOAExecutionEvent = this.connection.proto.lookupType('ProtoOAExecutionEvent');
         const execution = ProtoOAExecutionEvent.decode(payload);
 
-        console.log('📨 訂單執行事件:', execution.executionType);
+        // executionType: 2=ORDER_ACCEPTED, 3=ORDER_FILLED, 4=ORDER_REJECTED, 5=ORDER_CANCELLED...
+        const execType = execution.executionType;
+        console.log('📨 訂單執行事件:', execType);
 
-        // 處理訂單成交（開倉或平倉）
-        if (execution.executionType === 'ORDER_FILLED') {
+        // 處理訂單成交（開倉或平倉）- executionType = 3 (ORDER_FILLED)
+        if (execType === 3 || execType === 'ORDER_FILLED') {
             // 檢查是否有 Deal 資訊
             if (execution.deal) {
                 const deal = execution.deal;
@@ -496,9 +498,15 @@ class ExecutionEngine extends EventEmitter {
                     // 設定 SL/TP（基於開盤價）
                     if (this.pendingSlTp && execution.position) {
                         const positionId = execution.position.positionId;
+                        console.log(`📝 正在設定 SL/TP for position ${positionId}...`);
                         this.setPositionSlTp(positionId, this.pendingSlTp.stopLoss, this.pendingSlTp.takeProfit);
                         this.pendingSlTp = null;
+                    } else {
+                        console.warn('⚠️ 無法設定 SL/TP: pendingSlTp 或 position 資訊不存在');
                     }
+
+                    // 同步持倉 (重要：確保 Dashboard 顯示最新狀態)
+                    this.reconcilePositions();
 
                     this.emit('order-filled', execution);
                 }
@@ -507,11 +515,15 @@ class ExecutionEngine extends EventEmitter {
                 this.todayTradeDone = true;
                 this.saveState();
                 console.log('✅ 訂單成交，今日交易任務完成');
+
+                // 同步持倉
+                this.reconcilePositions();
+
                 this.emit('order-filled', execution);
             }
         }
-        // 處理訂單被拒 (例如：保證金不足、市場關閉)
-        else if (execution.executionType === 'ORDER_REJECTED') {
+        // 處理訂單被拒 (例如：保證金不足、市場關閉) - executionType = 4 (ORDER_REJECTED)
+        else if (execType === 4 || execType === 'ORDER_REJECTED') {
             const errCode = execution.errorCode || '原因未知';
             console.error('❌ 訂單被拒:', errCode);
 
