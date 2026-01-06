@@ -113,29 +113,34 @@ class ExecutionEngine extends EventEmitter {
                 const positionId = typeof p.positionId === 'object' && p.positionId.toNumber
                     ? p.positionId.toNumber()
                     : p.positionId;
-                const volume = typeof p.volume === 'object' && p.volume.toNumber
-                    ? p.volume.toNumber()
-                    : p.volume;
-                const price = typeof p.price === 'object' && p.price.toNumber
+
+                // volume 在 tradeData 裡面
+                const rawVolume = p.tradeData?.volume ?? p.volume;
+                const volume = typeof rawVolume === 'object' && rawVolume.toNumber
+                    ? rawVolume.toNumber()
+                    : rawVolume;
+
+                // price 已經是真實價格 (25454)，但 NAS100 有 2 位小數
+                // 需要加上 exactRepresentation (if exists) 或直接使用
+                const rawPrice = typeof p.price === 'object' && p.price.toNumber
                     ? p.price.toNumber()
                     : p.price;
+
                 const openTimestamp = typeof p.tradeData.openTimestamp === 'object' && p.tradeData.openTimestamp.toNumber
                     ? p.tradeData.openTimestamp.toNumber()
                     : p.tradeData.openTimestamp;
 
                 // Debug: 顯示原始數值
-                console.log(`🔍 [Debug] Position raw data: price=${price}, volume=${volume}, moneyDigits=${p.moneyDigits}`);
+                console.log(`🔍 [Debug] Position raw data: price=${rawPrice}, volume=${volume}, tradeData.volume=${p.tradeData?.volume}`);
 
-                // cTrader API: price 單位是 symbol 的 pipPosition 相關
-                // 需要根據 moneyDigits 來轉換 (通常 NAS100 是 2 位小數)
-                const digits = p.moneyDigits || 2;
-                const realPrice = price / Math.pow(10, digits);
+                // volume 單位是 centilots (10 = 0.1 lots)，轉換為 lots
+                const volumeInLots = volume ? volume / 100 : null;
 
                 return {
                     id: positionId,
                     type: isBuy ? 'long' : 'short',
-                    entryPrice: realPrice,
-                    volume: volume,
+                    entryPrice: rawPrice, // 已經是真實價格，不需轉換
+                    volume: volumeInLots, // 以 lots 為單位
                     openTime: new Date(openTimestamp)
                 };
             });
