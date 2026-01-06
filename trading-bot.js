@@ -155,7 +155,7 @@ class TradingBot {
         const timeStr = `${target.hour}:${target.minute.toString().padStart(2, '0')}`;
         const seasonStr = target.isDst ? '夏令' : '冬令';
 
-        const msg = `**NAS100 真實交易機器人已啟動**\n目前為美股 ${seasonStr}時間\n等待 **${timeStr}** 開始盯盤...`;
+        const msg = `目前為美股 ${seasonStr}時間\n等待 **${timeStr}** 開始盯盤...`;
         console.log(msg.replace(/\*\*/g, ''));
         this.sendDiscord(msg);
 

@@ -18,7 +18,8 @@ let collection = null;
  * 連線到 MongoDB
  */
 async function connectDB() {
-    if (client && client.topology && client.topology.isConnected()) {
+    // MongoDB 5.x: 使用 client 存在性檢查，driver 內部自動管理連線池
+    if (client && collection) {
         return collection;
     }
 
