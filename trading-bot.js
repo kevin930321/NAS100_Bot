@@ -276,7 +276,7 @@ class TradingBot {
     }
 
     /**
-     * 取得狀態
+     * 取得狀態（使用快取，即時透過 Execution Event 更新）
      */
     getStatus() {
         if (!this.engine) {
@@ -286,11 +286,7 @@ class TradingBot {
             };
         }
 
-        return {
-            connected: this.connection?.connected || false,
-            authenticated: this.connection?.authenticated || false,
-            ...this.engine.getStatus()
-        };
+        return this.engine.getStatus();
     }
 }
 
@@ -402,35 +398,13 @@ app.get('/health', (req, res) => {
     });
 });
 
-// 狀態 API (異步，取得即時帳戶餘額)
-app.get('/api/status', async (req, res) => {
-    try {
-        const status = bot.getStatus();
-
-        // 嘗試取得即時帳戶餘額
-        if (bot.engine && bot.connection?.connected) {
-            try {
-                const accountInfo = await bot.engine.getAccountInfo();
-                if (accountInfo) {
-                    status.balance = accountInfo.balance;
-                    status.equity = accountInfo.equity;
-                    status.usedMargin = accountInfo.usedMargin;
-                    status.freeMargin = accountInfo.freeMargin;
-                    status.unrealizedPnL = accountInfo.unrealizedPnL;
-                    status.leverage = accountInfo.leverage;
-                }
-            } catch (e) {
-                // 忽略錯誤，使用原本的餘額
-            }
-        }
-
-        res.json({
-            ...status,
-            logs: logs
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+// 狀態 API (使用快取，透過 Execution Event 即時更新)
+app.get('/api/status', (req, res) => {
+    const status = bot.getStatus();
+    res.json({
+        ...status,
+        logs: logs
+    });
 });
 
 // 操作 API
