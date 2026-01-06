@@ -676,6 +676,12 @@ class ExecutionEngine extends EventEmitter {
      * 執行策略邏輯
      */
     async executeStrategy() {
+        // Debug: 顯示條件檢查 (每 10 秒顯示一次避免刷屏)
+        if (!this._lastStrategyDebug || Date.now() - this._lastStrategyDebug > 10000) {
+            this._lastStrategyDebug = Date.now();
+            console.log(`🔍 [Strategy Debug] currentPrice=${this.currentPrice}, openPrice=${this.todayOpenPrice}, isWatching=${this.isWatching}, todayTradeDone=${this.todayTradeDone}, withinHours=${this.isWithinTradingHours()}`);
+        }
+
         if (!this.currentPrice || !this.todayOpenPrice) return;
         if (this.todayTradeDone || !this.isWatching) return;
 
