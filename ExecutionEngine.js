@@ -26,8 +26,8 @@ class ExecutionEngine extends EventEmitter {
         this.shortSL = config.strategy.shortSL;
         this.lotSize = config.account.baseLotSize;
 
-        // 狀態追蹤
-        this.balance = config.account.initialBalance;
+        // 狀態追蹤 (餘額從 cTrader API 即時取得，不使用預設值)
+        this.balance = null;
         this.positions = [];
         this.todayTradeDone = false;
         this.todayOpenPrice = null;
@@ -436,6 +436,9 @@ class ExecutionEngine extends EventEmitter {
      * 用於 Socket.IO 即時推送，不需要呼叫 API
      */
     calculateRealTimeAccountInfo() {
+        // 優先使用快取的 API 餘額 (餘額必須從 API 取得)
+        const balance = this.cachedAccountInfo?.balance ?? 0;
+
         // 計算未實現損益
         let unrealizedPnL = 0;
         const apiMultiplier = 100000;
@@ -454,10 +457,10 @@ class ExecutionEngine extends EventEmitter {
             }
         }
 
-        const equity = this.balance + unrealizedPnL;
+        const equity = balance + unrealizedPnL;
 
         return {
-            balance: this.balance,
+            balance: balance,
             equity: equity,
             unrealizedPnL: unrealizedPnL,
             usedMargin: this.cachedAccountInfo?.usedMargin || 0,
