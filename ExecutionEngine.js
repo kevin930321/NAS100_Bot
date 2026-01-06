@@ -475,7 +475,7 @@ class ExecutionEngine extends EventEmitter {
             for (const pos of this.positions) {
                 const entryPrice = pos.entryPrice;
                 const currentPrice = this.currentPrice / apiMultiplier;
-                const volume = pos.volume / 100; // volume 單位是 centilots
+                const volume = pos.volume; // volume 已經是 lots
 
                 if (pos.type === 'long') {
                     unrealizedPnL += (currentPrice - entryPrice) * volume;
