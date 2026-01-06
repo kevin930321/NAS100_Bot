@@ -647,8 +647,11 @@ class ExecutionEngine extends EventEmitter {
      */
     isWithinTradingHours() {
         const now = new Date();
-        const hour = now.getHours();
-        const minute = now.getMinutes();
+
+        // 使用台北時區 (UTC+8) 計算時間，避免伺服器時區問題
+        const taipeiTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+        const hour = taipeiTime.getHours();
+        const minute = taipeiTime.getMinutes();
         const currentMinutes = hour * 60 + minute;
 
         // 判斷夏令/冬令
@@ -658,6 +661,12 @@ class ExecutionEngine extends EventEmitter {
         // 夏令時間：台北時間 06:30 - 隔天 05:00 (即 06:30-23:59 和 00:00-05:00)
         const openMinutes = isDst ? (6 * 60 + 30) : (7 * 60 + 30);  // 夏令 06:30，冬令 07:30
         const closeMinutes = isDst ? (5 * 60) : (6 * 60);           // 夏令 05:00，冬令 06:00
+
+        // Debug: 顯示時區資訊
+        if (!this._lastTradingHoursDebug || Date.now() - this._lastTradingHoursDebug > 60000) {
+            this._lastTradingHoursDebug = Date.now();
+            console.log(`🕐 [Trading Hours] 台北時間: ${hour}:${minute.toString().padStart(2, '0')}, 開盤: ${Math.floor(openMinutes / 60)}:${(openMinutes % 60).toString().padStart(2, '0')}, 收盤: ${Math.floor(closeMinutes / 60)}:${(closeMinutes % 60).toString().padStart(2, '0')}`);
+        }
 
         // 交易時段跨越午夜
         // 有效時段：開盤時間 ~ 23:59 或 00:00 ~ 收盤時間
