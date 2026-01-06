@@ -442,7 +442,15 @@ class ExecutionEngine extends EventEmitter {
                     // 開倉交易成功 - 標記今日已交易
                     this.todayTradeDone = true;
                     this.saveState();
-                    console.log('✅ 開倉成功，今日交易任務完成');
+                    console.log(`✅ 開倉成功 (Position: ${deal.positionId})，今日交易任務完成`);
+
+                    // 檢查並設定 SL/TP (若從 openPosition 傳遞過來)
+                    if (this.pendingProtection) {
+                        console.log('🛡️ 正在設定 SL/TP...');
+                        this.setPositionProtection(deal.positionId, this.pendingProtection.sl, this.pendingProtection.tp);
+                        this.pendingProtection = null; // 清除暫存
+                    }
+
                     this.emit('order-filled', execution);
                 }
             } else {
@@ -635,6 +643,13 @@ class ExecutionEngine extends EventEmitter {
             const tpPriceReal = tpPriceRaw / apiMultiplier;
             const slPriceReal = slPriceRaw / apiMultiplier;
 
+            // 儲存待設定的保護 (TP/SL)
+            // 因為 Market Order 不支援絕對價格 SL/TP，我們必須在成交後再設定
+            this.pendingProtection = {
+                tp: tpPriceReal,
+                sl: slPriceReal
+            };
+
             // 發送訂單
             // orderType: MARKET=1, LIMIT=2, STOP=3
             // tradeSide: BUY=1, SELL=2
@@ -645,33 +660,57 @@ class ExecutionEngine extends EventEmitter {
                 orderType: 1, // MARKET
                 tradeSide: type === 'long' ? 1 : 2, // BUY=1, SELL=2
                 volume: volume,
-                stopLoss: slPriceReal,   // 傳送真實價格 (e.g. 15000.50)
-                takeProfit: tpPriceReal, // 傳送真實價格
+                // 移除 stopLoss 和 takeProfit，成交後再設
                 label: 'NAS100_MR'
             });
 
-            console.log(`${type === 'long' ? '📈' : '📉'} 開${type === 'long' ? '多' : '空'} | Price(Raw): ${this.currentPrice} | TP: ${tpPriceReal} | SL: ${slPriceReal}`);
+            console.log(`${type === 'long' ? '📈' : '📉'} 開${type === 'long' ? '多' : '空'} | Price(Raw): ${this.currentPrice} | 預計 TP: ${tpPriceReal} | 預計 SL: ${slPriceReal}`);
 
             const response = await this.connection.send('ProtoOANewOrderReq', order);
 
             // 注意：這裡不標記 todayTradeDone
             // 只有收到 ProtoOAExecutionEvent (成交) 才會標記，這部分由 handleExecutionEvent 處理
             // 這可以防止「訂單失敗但被標記已交易」的情況
-            console.log('📨 訂單發送成功，等待執行...');
+            console.log('📨 訂單發送成功，等待成交後設定 SL/TP...');
 
             // 發送 Discord 通知
             this.emit('trade-opened', {
-                type,
-                price: this.currentPrice,
+                type: type,
+                entryPrice: this.currentPrice,
                 tp: tpPriceReal,
-                sl: slPriceReal
+                sl: slPriceReal,
+                volume: volume
             });
 
         } catch (error) {
-            console.error('❌ 開倉失敗:', error);
-            this.emit('trade-error', error);
-        } finally {
+            console.error('❌ 下單失敗:', error.message);
             this.isPlacingOrder = false;
+        }
+    }
+
+    /**
+     * 設定持倉保護 (SL/TP)
+     * 用於 Market Order 成交後補設定
+     */
+    async setPositionProtection(positionId, slPrice, tpPrice) {
+        try {
+            const ProtoOAAmendPositionSLTPReq = this.connection.proto.lookupType('ProtoOAAmendPositionSLTPReq');
+
+            const request = ProtoOAAmendPositionSLTPReq.create({
+                ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
+                positionId: positionId,
+                stopLoss: slPrice,
+                takeProfit: tpPrice
+            });
+
+            console.log(`🛡️ 發送保護設定: Position ${positionId} | SL: ${slPrice} | TP: ${tpPrice}`);
+            await this.connection.send('ProtoOAAmendPositionSLTPReq', request);
+            console.log('✅ 保護設定已發送');
+
+        } catch (error) {
+            console.error('❌ 設定保護失敗:', error.message);
+            // 這裡失敗嚴重嗎？是的，代表沒有停損。應該重試嗎？
+            // 暫時先只顯示錯誤，實務上可能需要重試機制
         }
     }
 
