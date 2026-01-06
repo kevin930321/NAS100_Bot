@@ -41,17 +41,7 @@ class ExecutionEngine extends EventEmitter {
         this.losses = 0;
         this.trades = [];
 
-        // 帳戶資訊快取（透過 Execution Event 更新）
-        this.accountCache = {
-            balance: config.account.initialBalance,
-            equity: 0,
-            usedMargin: 0,
-            freeMargin: 0,
-            unrealizedPnL: 0,
-            leverage: 0
-        };
-
-        // 符號資訊緩存
+        // 緩存
         this.symbolInfoCache = {};
 
         // 綁定訊息處理
@@ -101,45 +91,9 @@ class ExecutionEngine extends EventEmitter {
             this.todayOpenPrice = null;
             console.log('⏳ 等待盯盤訊號 (07:01 cron 觸發)...');
 
-            // 啟動 5 秒輪詢，更新帳戶資訊（保證金、淨值等）
-            this.startAccountPolling();
-
         } catch (error) {
             console.error('❌ 初始化失敗:', error);
         }
-    }
-
-    /**
-     * 啟動帳戶資訊輪詢（每 5 秒更新一次保證金、淨值等）
-     */
-    startAccountPolling() {
-        // 避免重複啟動
-        if (this.accountPollingInterval) {
-            clearInterval(this.accountPollingInterval);
-        }
-
-        this.accountPollingInterval = setInterval(async () => {
-            try {
-                if (this.connection && this.connection.authenticated) {
-                    const accountInfo = await this.getAccountInfo();
-                    if (accountInfo) {
-                        this.accountCache = {
-                            balance: accountInfo.balance,
-                            equity: accountInfo.equity,
-                            usedMargin: accountInfo.usedMargin,
-                            freeMargin: accountInfo.freeMargin,
-                            unrealizedPnL: accountInfo.unrealizedPnL,
-                            leverage: accountInfo.leverage
-                        };
-                        this.balance = accountInfo.balance;
-                    }
-                }
-            } catch (error) {
-                // 靜默處理錯誤，避免日誌過多
-            }
-        }, 5000); // 每 5 秒
-
-        console.log('🔄 帳戶資訊輪詢已啟動 (每 5 秒)');
     }
 
     /**
@@ -196,10 +150,6 @@ class ExecutionEngine extends EventEmitter {
                 console.log('ℹ️ 持倉同步完成，todayTradeDone 狀態維持不變');
 
                 await this.saveState();
-
-                // 初始化帳戶快取
-                this.refreshCache();
-
                 this.emit('positions-reconciled', this.positions);
             } else {
                 console.log('✅ 無未平倉部位');
@@ -502,9 +452,6 @@ class ExecutionEngine extends EventEmitter {
                     }
 
                     this.emit('order-filled', execution);
-
-                    // 即時更新快取
-                    this.refreshCache();
                 }
             } else {
                 // 向下相容舊邏輯 (雖然 ORDER_FILLED 通常都有 Deal)
@@ -578,53 +525,6 @@ class ExecutionEngine extends EventEmitter {
 
         // 發送事件通知
         this.emit('trade-closed', tradeRecord);
-
-        // 即時更新快取
-        this.refreshCache();
-    }
-
-    /**
-     * 即時更新快取（持倉和帳戶資訊）
-     * 在 Execution Event 後呼叫，讓 Dashboard 能即時顯示
-     */
-    async refreshCache() {
-        try {
-            // 更新帳戶資訊
-            const accountInfo = await this.getAccountInfo();
-            if (accountInfo) {
-                this.accountCache = {
-                    balance: accountInfo.balance,
-                    equity: accountInfo.equity,
-                    usedMargin: accountInfo.usedMargin,
-                    freeMargin: accountInfo.freeMargin,
-                    unrealizedPnL: accountInfo.unrealizedPnL,
-                    leverage: accountInfo.leverage
-                };
-                this.balance = accountInfo.balance;
-            }
-
-            // 更新持倉列表
-            const rawPositions = await this.getOpenPositions();
-            this.positions = rawPositions.map(p => {
-                const side = p.tradeData?.tradeSide;
-                const isBuy = side === 1 || side === 'BUY';
-                const positionId = typeof p.positionId === 'object' && p.positionId.toNumber
-                    ? p.positionId.toNumber() : p.positionId;
-                const volume = typeof p.volume === 'object' && p.volume.toNumber
-                    ? p.volume.toNumber() : p.volume;
-
-                return {
-                    id: positionId,
-                    type: isBuy ? 'long' : 'short',
-                    entryPrice: p.price,
-                    volume: volume / 100, // 轉為 lots
-                };
-            });
-
-            console.log(`🔄 快取已更新 (餘額: $${this.balance?.toFixed(2)}, 持倉: ${this.positions.length})`);
-        } catch (error) {
-            console.error('⚠️ 更新快取失敗:', error.message);
-        }
     }
 
     /**
@@ -1128,18 +1028,49 @@ class ExecutionEngine extends EventEmitter {
 
 
     /**
-     * 取得當前狀態（使用快取，透過 Execution Event 即時更新）
+     * 取得當前狀態（即時從 cTrader API 取得）
      */
-    getStatus() {
+    async getStatus() {
+        // 即時取得帳戶資訊和持倉
+        let accountInfo = {};
+        let livePositions = [];
+
+        try {
+            if (this.connection && this.connection.authenticated) {
+                // 取得帳戶資訊
+                accountInfo = await this.getAccountInfo();
+
+                // 取得即時持倉
+                const rawPositions = await this.getOpenPositions();
+                livePositions = rawPositions.map(p => {
+                    const side = p.tradeData?.tradeSide;
+                    const isBuy = side === 1 || side === 'BUY';
+                    const positionId = typeof p.positionId === 'object' && p.positionId.toNumber
+                        ? p.positionId.toNumber() : p.positionId;
+                    const volume = typeof p.volume === 'object' && p.volume.toNumber
+                        ? p.volume.toNumber() : p.volume;
+
+                    return {
+                        id: positionId,
+                        type: isBuy ? 'long' : 'short',
+                        entryPrice: p.price,
+                        volume: volume / 100, // 轉為 lots
+                    };
+                });
+            }
+        } catch (error) {
+            console.error('⚠️ 取得即時狀態失敗:', error.message);
+        }
+
         return {
             connected: this.connection?.connected || false,
             authenticated: this.connection?.authenticated || false,
-            balance: this.accountCache.balance || this.balance || 0,
-            equity: this.accountCache.equity || 0,
-            usedMargin: this.accountCache.usedMargin || 0,
-            freeMargin: this.accountCache.freeMargin || 0,
-            unrealizedPnL: this.accountCache.unrealizedPnL || 0,
-            leverage: this.accountCache.leverage || 0,
+            balance: accountInfo.balance || this.balance || 0,
+            equity: accountInfo.equity || 0,
+            usedMargin: accountInfo.usedMargin || 0,
+            freeMargin: accountInfo.freeMargin || 0,
+            unrealizedPnL: accountInfo.unrealizedPnL || 0,
+            leverage: accountInfo.leverage || 0,
             wins: this.wins,
             losses: this.losses,
             winRate: this.wins + this.losses > 0
@@ -1147,7 +1078,7 @@ class ExecutionEngine extends EventEmitter {
                 : '--',
             currentPrice: this.currentPrice,
             openPrice: this.todayOpenPrice,
-            positions: this.positions,
+            positions: livePositions,
             isWatching: this.isWatching,
             todayTradeDone: this.todayTradeDone,
             symbolInfo: this.symbolInfoCache[this.config.market.symbol] ? {
