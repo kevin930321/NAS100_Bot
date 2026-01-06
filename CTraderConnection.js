@@ -404,11 +404,27 @@ class CTraderConnection extends EventEmitter {
             // Open API Messages
             // ProtoOAApplicationAuthReq -> APPLICATION_AUTH_REQ -> PROTO_OA_APPLICATION_AUTH_REQ
             const baseName = typeName.substring(7); // Remove 'ProtoOA'
-            const snakeName = baseName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+            // 改進的 snake case 轉換：處理連續大寫字母（如 SLTP）
+            const snakeName = baseName
+                .replace(/([a-z])([A-Z])/g, '$1_$2')  // camelCase 轉換
+                .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')  // 處理連續大寫如 SLTPReq -> SLTP_Req
+                .toUpperCase();
             key = `PROTO_OA_${snakeName}`;
 
             const enumType = this.proto.lookupEnum('ProtoOAPayloadType');
-            return enumType.values[key];
+            const result = enumType.values[key];
+
+            if (result === undefined) {
+                console.warn(`⚠️ [getPayloadTypeId] 找不到 payloadType: ${key} (from ${typeName})`);
+                // 嘗試其他可能的命名格式
+                const altKey = `PROTO_OA_${baseName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()}`;
+                if (enumType.values[altKey] !== undefined) {
+                    console.log(`   使用替代 key: ${altKey}`);
+                    return enumType.values[altKey];
+                }
+                console.error(`❌ 無法找到 enum 值，可用的值:`, Object.keys(enumType.values).filter(k => k.includes('AMEND')));
+            }
+            return result || 0;
         } else {
             // Common Messages
             // ProtoHeartbeatEvent -> HEARTBEAT_EVENT
