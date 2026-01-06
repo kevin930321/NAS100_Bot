@@ -1197,9 +1197,11 @@ class ExecutionEngine extends EventEmitter {
                         ? position.positionId.toNumber()
                         : position.positionId;
 
-                    const volume = typeof position.volume === 'object' && position.volume.toNumber
-                        ? position.volume.toNumber()
-                        : position.volume;
+                    // volume 可能在 tradeData 或 position 中
+                    const rawVolume = position.tradeData?.volume ?? position.volume;
+                    const volume = typeof rawVolume === 'object' && rawVolume.toNumber
+                        ? rawVolume.toNumber()
+                        : rawVolume;
 
                     console.log(`📊 平倉 ID: ${positionId}, Volume: ${volume}`);
 
@@ -1245,9 +1247,11 @@ class ExecutionEngine extends EventEmitter {
                 return;
             }
 
-            const volume = typeof position.volume === 'object' && position.volume.toNumber
-                ? position.volume.toNumber()
-                : position.volume;
+            // volume 可能在 tradeData 或 position 中
+            const rawVolume = position.tradeData?.volume ?? position.volume;
+            const volume = typeof rawVolume === 'object' && rawVolume.toNumber
+                ? rawVolume.toNumber()
+                : rawVolume;
 
             console.log(`📊 平倉 ID: ${positionId}, Volume: ${volume}`);
 
