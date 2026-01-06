@@ -278,7 +278,7 @@ class TradingBot {
     /**
      * 取得狀態
      */
-    async getStatus() {
+    getStatus() {
         if (!this.engine) {
             return {
                 connected: false,
@@ -286,9 +286,10 @@ class TradingBot {
             };
         }
 
-        const engineStatus = await this.engine.getStatus();
         return {
-            ...engineStatus
+            connected: this.connection?.connected || false,
+            authenticated: this.connection?.authenticated || false,
+            ...this.engine.getStatus()
         };
     }
 }
@@ -308,7 +309,7 @@ const bot = new TradingBot();
 
 // 定時狀態輸出 (使用即時帳戶餘額)
 cron.schedule('0,30 * * * * *', async () => {
-    const status = await bot.getStatus();
+    const status = bot.getStatus();
     if (status.connected) {
         // 嘗試取得即時餘額
         let balance = status.balance;
@@ -404,7 +405,7 @@ app.get('/health', (req, res) => {
 // 狀態 API (異步，取得即時帳戶餘額)
 app.get('/api/status', async (req, res) => {
     try {
-        const status = await bot.getStatus();
+        const status = bot.getStatus();
 
         // 嘗試取得即時帳戶餘額
         if (bot.engine && bot.connection?.connected) {
@@ -465,12 +466,12 @@ app.post('/api/action', async (req, res) => {
                 if (bot.engine) {
                     const success = await bot.engine.fetchAndSetOpenPrice();
                     if (!success) {
-                        return res.json({ success: false, message: '無法取得開盤價', state: await bot.getStatus() });
+                        return res.json({ success: false, message: '無法取得開盤價', state: bot.getStatus() });
                     }
                 }
                 break;
         }
-        res.json({ success: true, state: await bot.getStatus() });
+        res.json({ success: true, state: bot.getStatus() });
     } catch (e) {
         console.error('API Error:', e);
         res.status(500).json({ error: e.message });

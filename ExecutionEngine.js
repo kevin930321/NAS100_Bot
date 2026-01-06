@@ -1028,49 +1028,11 @@ class ExecutionEngine extends EventEmitter {
 
 
     /**
-     * 取得當前狀態（即時從 cTrader API 取得）
+     * 取得當前狀態
      */
-    async getStatus() {
-        // 即時取得帳戶資訊和持倉
-        let accountInfo = {};
-        let livePositions = [];
-
-        try {
-            if (this.connection && this.connection.authenticated) {
-                // 取得帳戶資訊
-                accountInfo = await this.getAccountInfo();
-
-                // 取得即時持倉
-                const rawPositions = await this.getOpenPositions();
-                livePositions = rawPositions.map(p => {
-                    const side = p.tradeData?.tradeSide;
-                    const isBuy = side === 1 || side === 'BUY';
-                    const positionId = typeof p.positionId === 'object' && p.positionId.toNumber
-                        ? p.positionId.toNumber() : p.positionId;
-                    const volume = typeof p.volume === 'object' && p.volume.toNumber
-                        ? p.volume.toNumber() : p.volume;
-
-                    return {
-                        id: positionId,
-                        type: isBuy ? 'long' : 'short',
-                        entryPrice: p.price,
-                        volume: volume / 100, // 轉為 lots
-                    };
-                });
-            }
-        } catch (error) {
-            console.error('⚠️ 取得即時狀態失敗:', error.message);
-        }
-
+    getStatus() {
         return {
-            connected: this.connection?.connected || false,
-            authenticated: this.connection?.authenticated || false,
-            balance: accountInfo.balance || this.balance || 0,
-            equity: accountInfo.equity || 0,
-            usedMargin: accountInfo.usedMargin || 0,
-            freeMargin: accountInfo.freeMargin || 0,
-            unrealizedPnL: accountInfo.unrealizedPnL || 0,
-            leverage: accountInfo.leverage || 0,
+            balance: this.balance,
             wins: this.wins,
             losses: this.losses,
             winRate: this.wins + this.losses > 0
@@ -1078,7 +1040,7 @@ class ExecutionEngine extends EventEmitter {
                 : '--',
             currentPrice: this.currentPrice,
             openPrice: this.todayOpenPrice,
-            positions: livePositions,
+            positions: this.positions,
             isWatching: this.isWatching,
             todayTradeDone: this.todayTradeDone,
             symbolInfo: this.symbolInfoCache[this.config.market.symbol] ? {
