@@ -586,11 +586,17 @@ class ExecutionEngine extends EventEmitter {
         const detail = deal.closePositionDetail;
         const positionId = deal.positionId;
 
+        // Debug: 顯示原始數值
+        console.log(`🔍 [Debug] closePositionDetail: grossProfit=${detail.grossProfit}, swap=${detail.swap}, commission=${detail.commission}, balance=${detail.balance}, moneyDigits=${detail.moneyDigits}`);
+
         // 計算損益 (Net Profit = Gross Profit + Swap + Commission)
-        // 注意: 這些值都是 cents，需要除以 100 轉為金額
-        const netProfitCents = detail.grossProfit + detail.swap + detail.commission;
-        const netProfit = netProfitCents / 100;
-        const balance = detail.balance / 100;
+        // cTrader API: 金額單位需要根據 moneyDigits 轉換 (通常是 2，所以除以 100)
+        const moneyDigits = detail.moneyDigits || 2;
+        const divisor = Math.pow(10, moneyDigits);
+
+        const netProfitRaw = (detail.grossProfit || 0) + (detail.swap || 0) + (detail.commission || 0);
+        const netProfit = netProfitRaw / divisor;
+        const balance = (detail.balance || 0) / divisor;
 
         console.log(`💰 交易平倉 ID: ${positionId} | 損益: $${netProfit.toFixed(2)} | 餘額: $${balance.toFixed(2)}`);
 
@@ -610,8 +616,13 @@ class ExecutionEngine extends EventEmitter {
         this.trades.unshift(tradeRecord);
         if (this.trades.length > 50) this.trades.pop(); // 只保留最近 50 筆
 
-        // 從持倉列表中移除
-        this.positions = this.positions.filter(p => p.id !== positionId);
+        // 從持倉列表中移除 (處理 positionId Long 物件)
+        const closedPositionId = typeof positionId === 'object' && positionId.toNumber
+            ? positionId.toNumber()
+            : positionId;
+        console.log(`🔍 [Debug] 移除持倉 ID: ${closedPositionId}, 當前持倉數: ${this.positions.length}`);
+        this.positions = this.positions.filter(p => p.id !== closedPositionId);
+        console.log(`🔍 [Debug] 移除後持倉數: ${this.positions.length}`);
 
         // 儲存狀態
         this.saveState();
