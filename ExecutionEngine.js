@@ -1091,15 +1091,31 @@ class ExecutionEngine extends EventEmitter {
      * 平倉
      */
     async closePosition(positionId) {
-        const ProtoOAClosePositionReq = this.connection.proto.lookupType('ProtoOAClosePositionReq');
-        const message = ProtoOAClosePositionReq.create({
-            ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
-            positionId: positionId,
-            volume: this.positions.find(p => p.id === positionId)?.volume || 100000
-        });
+        try {
+            // 先取得持倉的正確 volume
+            const positions = await this.getOpenPositions();
+            const position = positions.find(p => p.positionId === positionId || p.positionId === parseInt(positionId));
 
-        await this.connection.send('ProtoOAClosePositionReq', message);
-        console.log(`✅ 已平倉部位 ID: ${positionId}`);
+            if (!position) {
+                console.warn(`⚠️ 找不到持倉 ID: ${positionId}`);
+                return;
+            }
+
+            const volume = position.volume;
+            console.log(`📊 平倉 ID: ${positionId}, Volume: ${volume}`);
+
+            const ProtoOAClosePositionReq = this.connection.proto.lookupType('ProtoOAClosePositionReq');
+            const message = ProtoOAClosePositionReq.create({
+                ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
+                positionId: parseInt(positionId),
+                volume: volume
+            });
+
+            await this.connection.send('ProtoOAClosePositionReq', message);
+            console.log(`✅ 已平倉部位 ID: ${positionId}`);
+        } catch (error) {
+            console.error(`❌ 平倉失敗 (ID: ${positionId}):`, error.message);
+        }
     }
 
     /**
