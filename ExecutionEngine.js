@@ -1092,22 +1092,35 @@ class ExecutionEngine extends EventEmitter {
      */
     async closePosition(positionId) {
         try {
+            // 轉換傳入的 positionId 為數字（可能是字串）
+            const targetId = typeof positionId === 'string' ? parseInt(positionId) : positionId;
+
             // 先取得持倉的正確 volume
             const positions = await this.getOpenPositions();
-            const position = positions.find(p => p.positionId === positionId || p.positionId === parseInt(positionId));
+
+            // 找到目標持倉（處理 positionId 可能是 Long 物件的情況）
+            const position = positions.find(p => {
+                const pId = typeof p.positionId === 'object' && p.positionId.toNumber
+                    ? p.positionId.toNumber()
+                    : parseInt(p.positionId);
+                return pId === targetId;
+            });
 
             if (!position) {
                 console.warn(`⚠️ 找不到持倉 ID: ${positionId}`);
                 return;
             }
 
-            const volume = position.volume;
+            const volume = typeof position.volume === 'object' && position.volume.toNumber
+                ? position.volume.toNumber()
+                : position.volume;
+
             console.log(`📊 平倉 ID: ${positionId}, Volume: ${volume}`);
 
             const ProtoOAClosePositionReq = this.connection.proto.lookupType('ProtoOAClosePositionReq');
             const message = ProtoOAClosePositionReq.create({
                 ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
-                positionId: parseInt(positionId),
+                positionId: targetId,
                 volume: volume
             });
 
