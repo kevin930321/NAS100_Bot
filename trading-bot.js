@@ -501,6 +501,12 @@ app.post('/api/action', async (req, res) => {
                 }
                 break;
 
+            case 'closePosition':
+                if (bot.engine && req.body.positionId) {
+                    await bot.engine.closePosition(req.body.positionId);
+                }
+                break;
+
             case 'updateConfig':
                 if (bot.engine && req.body.config) {
                     bot.engine.updateConfig(req.body.config);

@@ -594,9 +594,9 @@ class ExecutionEngine extends EventEmitter {
         const positionId = deal.positionId;
 
         // 計算損益 (Net Profit = Gross Profit + Swap + Commission)
-        // cTrader API: grossProfit/swap/commission 單位是 cents (美分)，固定除以 100
-        const netProfitCents = (detail.grossProfit || 0) + (detail.swap || 0) + (detail.commission || 0);
-        const netProfit = netProfitCents / 100;  // cents -> dollars
+        // cTrader API: grossProfit/swap/commission 單位需要除以 10000
+        const netProfitRaw = (detail.grossProfit || 0) + (detail.swap || 0) + (detail.commission || 0);
+        const netProfit = netProfitRaw / 10000;
 
         // balance 使用 moneyDigits 計算
         const moneyDigits = detail.moneyDigits || 2;

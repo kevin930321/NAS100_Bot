@@ -528,8 +528,8 @@
                     }
 
                     return `
-                        <div class="position-card ${typeClass}">
-                            <div>
+                        <div class="position-card ${typeClass}" style="display: flex; align-items: center; gap: 12px;">
+                            <div style="flex: 1;">
                                 <div style="font-weight: 700; font-size: 1.1rem;">
                                     ${typeIcon} ${pos.type.toUpperCase()}
                                 </div>
@@ -537,10 +537,16 @@
                                     Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Vol: ${pos.volume != null ? pos.volume.toFixed(2) : '--'}
                                 </div>
                             </div>
-                            <div style="text-align: right;">
+                            <div style="text-align: right; flex-shrink: 0;">
                                 <div style="font-size: 1.1rem; font-weight: 700; color: ${pnlColor};">${pnlDisplay}</div>
-                                <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">ID: ${pos.id || '--'}</div>
+                                <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">ID: ${pos.id || '--'}</div>
                             </div>
+                            <button onclick="closePosition(${pos.id})" 
+                                    style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600; flex-shrink: 0;"
+                                    onmouseover="this.style.background='#dc2626'" 
+                                    onmouseout="this.style.background='#ef4444'">
+                                平倉
+                            </button>
                         </div>
                     `;
                 }).join('');
@@ -728,8 +734,8 @@
                     }
 
                     return `
-                        <div class="position-card ${typeClass}">
-                            <div>
+                        <div class="position-card ${typeClass}" style="display: flex; align-items: center; gap: 12px;">
+                            <div style="flex: 1;">
                                 <div style="font-weight: 700; font-size: 1.1rem;">
                                     ${typeIcon} ${pos.type.toUpperCase()}
                                 </div>
@@ -737,10 +743,16 @@
                                     Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Vol: ${pos.volume != null ? pos.volume.toFixed(2) : '--'}
                                 </div>
                             </div>
-                            <div style="text-align: right;">
+                            <div style="text-align: right; flex-shrink: 0;">
                                 <div style="font-size: 1.1rem; font-weight: 700; color: ${pnlColor};">${pnlDisplay}</div>
-                                <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">ID: ${pos.id || '--'}</div>
+                                <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">ID: ${pos.id || '--'}</div>
                             </div>
+                            <button onclick="closePosition(${pos.id})" 
+                                    style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600; flex-shrink: 0;"
+                                    onmouseover="this.style.background='#dc2626'" 
+                                    onmouseout="this.style.background='#ef4444'">
+                                平倉
+                            </button>
                         </div>
                     `;
                 }).join('');
@@ -828,6 +840,26 @@
         function closeAllPositions() {
             if (confirm('⚠️ 確定要緊急平倉所有持倉嗎？此操作無法復原！')) {
                 doAction('closePositions');
+            }
+        }
+
+        async function closePosition(positionId) {
+            if (!confirm(`確定要平倉持倉 ID: ${positionId} 嗎？`)) return;
+
+            try {
+                const res = await fetch(API_URL + '/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'closePosition', positionId: positionId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    updateUI(data.state);
+                } else {
+                    alert('平倉失敗: ' + (data.error || '未知錯誤'));
+                }
+            } catch (e) {
+                alert('請求失敗: ' + e.message);
             }
         }
 
