@@ -733,7 +733,7 @@ class ExecutionEngine extends EventEmitter {
                 trades: this.trades,
                 todayTradeDone: this.todayTradeDone,
                 lastResetDate: this.lastResetDate, // 新增：保存重置日期
-                positions: this.positions,
+                // positions 不再儲存，直接從 cTrader API 即時取得
                 config: {
                     entryOffset: this.entryOffset,
                     longTP: this.longTP,
@@ -1075,15 +1075,48 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
-     * 手動平倉
+     * 手動平倉（從 cTrader API 取得最新持倉，不使用快取）
      */
     async closeAllPositions() {
-        for (const position of this.positions) {
-            try {
-                await this.closePosition(position.id);
-            } catch (error) {
-                console.error(`❌ 平倉失敗 (ID: ${position.id}):`, error);
+        try {
+            // 直接從 cTrader API 取得最新持倉
+            const positions = await this.getOpenPositions();
+
+            if (positions.length === 0) {
+                console.log('ℹ️ 目前無持倉');
+                return;
             }
+
+            console.log(`📊 準備平倉 ${positions.length} 個部位...`);
+
+            for (const position of positions) {
+                try {
+                    // 處理 positionId 可能是 Long 物件
+                    const positionId = typeof position.positionId === 'object' && position.positionId.toNumber
+                        ? position.positionId.toNumber()
+                        : position.positionId;
+
+                    const volume = typeof position.volume === 'object' && position.volume.toNumber
+                        ? position.volume.toNumber()
+                        : position.volume;
+
+                    console.log(`📊 平倉 ID: ${positionId}, Volume: ${volume}`);
+
+                    const ProtoOAClosePositionReq = this.connection.proto.lookupType('ProtoOAClosePositionReq');
+                    const message = ProtoOAClosePositionReq.create({
+                        ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
+                        positionId: positionId,
+                        volume: volume
+                    });
+
+                    await this.connection.send('ProtoOAClosePositionReq', message);
+                    console.log(`✅ 已平倉部位 ID: ${positionId}`);
+                } catch (error) {
+                    console.error(`❌ 平倉失敗:`, error.message);
+                }
+            }
+        } catch (error) {
+            console.error('❌ 取得持倉失敗:', error.message);
         }
     }
 
