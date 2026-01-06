@@ -518,6 +518,15 @@
                 posListEl.innerHTML = positions.map(pos => {
                     const typeClass = pos.type === 'long' ? 'position-long' : 'position-short';
                     const typeIcon = pos.type === 'long' ? '📈' : '📉';
+
+                    // 計算損益顯示
+                    let pnlDisplay = '--';
+                    let pnlColor = '#94a3b8';
+                    if (pos.pnl != null) {
+                        pnlDisplay = (pos.pnl >= 0 ? '+' : '') + '$' + pos.pnl.toFixed(2);
+                        pnlColor = pos.pnl >= 0 ? '#22c55e' : '#ef4444';
+                    }
+
                     return `
                         <div class="position-card ${typeClass}">
                             <div>
@@ -525,11 +534,12 @@
                                     ${typeIcon} ${pos.type.toUpperCase()}
                                 </div>
                                 <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
-                                    Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Volume: ${pos.volume != null ? pos.volume.toFixed(2) + ' lots' : '--'}
+                                    Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Vol: ${pos.volume != null ? pos.volume.toFixed(2) : '--'}
                                 </div>
                             </div>
                             <div style="text-align: right;">
-                                <div style="font-size: 0.8rem; color: #64748b;">ID: ${pos.id || '--'}</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: ${pnlColor};">${pnlDisplay}</div>
+                                <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">ID: ${pos.id || '--'}</div>
                             </div>
                         </div>
                     `;
@@ -708,6 +718,15 @@
                 posListEl.innerHTML = positions.map(pos => {
                     const typeClass = pos.type === 'long' ? 'position-long' : 'position-short';
                     const typeIcon = pos.type === 'long' ? '📈' : '📉';
+
+                    // 計算損益顯示
+                    let pnlDisplay = '--';
+                    let pnlColor = '#94a3b8';
+                    if (pos.pnl != null) {
+                        pnlDisplay = (pos.pnl >= 0 ? '+' : '') + '$' + pos.pnl.toFixed(2);
+                        pnlColor = pos.pnl >= 0 ? '#22c55e' : '#ef4444';
+                    }
+
                     return `
                         <div class="position-card ${typeClass}">
                             <div>
@@ -715,11 +734,12 @@
                                     ${typeIcon} ${pos.type.toUpperCase()}
                                 </div>
                                 <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
-                                    Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Volume: ${pos.volume != null ? pos.volume.toFixed(2) + ' lots' : '--'}
+                                    Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Vol: ${pos.volume != null ? pos.volume.toFixed(2) : '--'}
                                 </div>
                             </div>
                             <div style="text-align: right;">
-                                <div style="font-size: 0.8rem; color: #64748b;">ID: ${pos.id || '--'}</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: ${pnlColor};">${pnlDisplay}</div>
+                                <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">ID: ${pos.id || '--'}</div>
                             </div>
                         </div>
                     `;

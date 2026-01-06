@@ -116,12 +116,11 @@ class TradingBot {
         this.engine.on('price-update', (data) => {
             if (this.io && Date.now() - lastPricePush >= 500) {
                 lastPricePush = Date.now();
-                // 附加即時帳戶資訊
+                // 附加即時帳戶資訊 (accountInfo.positions 已包含即時損益)
                 const accountInfo = this.engine.calculateRealTimeAccountInfo();
                 this.io.emit('realtime-update', {
                     ...data,
                     ...accountInfo,
-                    positions: this.engine.positions,
                     isWatching: this.engine.isWatching,
                     todayTradeDone: this.engine.todayTradeDone,
                     wins: this.engine.wins,

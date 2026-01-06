@@ -130,9 +130,6 @@ class ExecutionEngine extends EventEmitter {
                     ? p.tradeData.openTimestamp.toNumber()
                     : p.tradeData.openTimestamp;
 
-                // Debug: 顯示原始數值
-                console.log(`🔍 [Debug] Position raw data: price=${rawPrice}, volume=${volume}, tradeData.volume=${p.tradeData?.volume}`);
-
                 // volume 單位是 centilots (10 = 0.1 lots)，轉換為 lots
                 const volumeInLots = volume ? volume / 100 : null;
 
@@ -471,19 +468,28 @@ class ExecutionEngine extends EventEmitter {
         let unrealizedPnL = 0;
         const apiMultiplier = 100000;
 
-        if (this.currentPrice && this.positions.length > 0) {
-            for (const pos of this.positions) {
-                const entryPrice = pos.entryPrice;
-                const currentPrice = this.currentPrice / apiMultiplier;
-                const volume = pos.volume; // volume 已經是 lots
+        // 計算每個持倉的即時損益
+        const positionsWithPnL = this.positions.map(pos => {
+            const entryPrice = pos.entryPrice;
+            const currentPrice = this.currentPrice ? this.currentPrice / apiMultiplier : null;
+            const volume = pos.volume; // volume 已經是 lots
 
+            let pnl = null;
+            if (currentPrice && volume) {
                 if (pos.type === 'long') {
-                    unrealizedPnL += (currentPrice - entryPrice) * volume;
+                    pnl = (currentPrice - entryPrice) * volume;
                 } else {
-                    unrealizedPnL += (entryPrice - currentPrice) * volume;
+                    pnl = (entryPrice - currentPrice) * volume;
                 }
+                unrealizedPnL += pnl;
             }
-        }
+
+            return {
+                ...pos,
+                currentPrice: currentPrice,
+                pnl: pnl
+            };
+        });
 
         const equity = balance + unrealizedPnL;
 
@@ -493,7 +499,8 @@ class ExecutionEngine extends EventEmitter {
             unrealizedPnL: unrealizedPnL,
             usedMargin: this.cachedAccountInfo?.usedMargin || 0,
             freeMargin: equity - (this.cachedAccountInfo?.usedMargin || 0),
-            leverage: this.cachedAccountInfo?.leverage || null
+            leverage: this.cachedAccountInfo?.leverage || null,
+            positions: positionsWithPnL  // 帶有即時損益的持倉列表
         };
     }
 
@@ -586,17 +593,14 @@ class ExecutionEngine extends EventEmitter {
         const detail = deal.closePositionDetail;
         const positionId = deal.positionId;
 
-        // Debug: 顯示原始數值
-        console.log(`🔍 [Debug] closePositionDetail: grossProfit=${detail.grossProfit}, swap=${detail.swap}, commission=${detail.commission}, balance=${detail.balance}, moneyDigits=${detail.moneyDigits}`);
-
         // 計算損益 (Net Profit = Gross Profit + Swap + Commission)
-        // cTrader API: 金額單位需要根據 moneyDigits 轉換 (通常是 2，所以除以 100)
-        const moneyDigits = detail.moneyDigits || 2;
-        const divisor = Math.pow(10, moneyDigits);
+        // cTrader API: grossProfit/swap/commission 單位是 cents (美分)，固定除以 100
+        const netProfitCents = (detail.grossProfit || 0) + (detail.swap || 0) + (detail.commission || 0);
+        const netProfit = netProfitCents / 100;  // cents -> dollars
 
-        const netProfitRaw = (detail.grossProfit || 0) + (detail.swap || 0) + (detail.commission || 0);
-        const netProfit = netProfitRaw / divisor;
-        const balance = (detail.balance || 0) / divisor;
+        // balance 使用 moneyDigits 計算
+        const moneyDigits = detail.moneyDigits || 2;
+        const balance = (detail.balance || 0) / Math.pow(10, moneyDigits);
 
         console.log(`💰 交易平倉 ID: ${positionId} | 損益: $${netProfit.toFixed(2)} | 餘額: $${balance.toFixed(2)}`);
 
@@ -620,9 +624,7 @@ class ExecutionEngine extends EventEmitter {
         const closedPositionId = typeof positionId === 'object' && positionId.toNumber
             ? positionId.toNumber()
             : positionId;
-        console.log(`🔍 [Debug] 移除持倉 ID: ${closedPositionId}, 當前持倉數: ${this.positions.length}`);
         this.positions = this.positions.filter(p => p.id !== closedPositionId);
-        console.log(`🔍 [Debug] 移除後持倉數: ${this.positions.length}`);
 
         // 儲存狀態
         this.saveState();
@@ -662,12 +664,6 @@ class ExecutionEngine extends EventEmitter {
         const openMinutes = isDst ? (6 * 60 + 30) : (7 * 60 + 30);  // 夏令 06:30，冬令 07:30
         const closeMinutes = isDst ? (5 * 60) : (6 * 60);           // 夏令 05:00，冬令 06:00
 
-        // Debug: 顯示時區資訊
-        if (!this._lastTradingHoursDebug || Date.now() - this._lastTradingHoursDebug > 60000) {
-            this._lastTradingHoursDebug = Date.now();
-            console.log(`🕐 [Trading Hours] 台北時間: ${hour}:${minute.toString().padStart(2, '0')}, 開盤: ${Math.floor(openMinutes / 60)}:${(openMinutes % 60).toString().padStart(2, '0')}, 收盤: ${Math.floor(closeMinutes / 60)}:${(closeMinutes % 60).toString().padStart(2, '0')}`);
-        }
-
         // 交易時段跨越午夜
         // 有效時段：開盤時間 ~ 23:59 或 00:00 ~ 收盤時間
         if (currentMinutes >= openMinutes) {
@@ -685,12 +681,6 @@ class ExecutionEngine extends EventEmitter {
      * 執行策略邏輯
      */
     async executeStrategy() {
-        // Debug: 顯示條件檢查 (每 10 秒顯示一次避免刷屏)
-        if (!this._lastStrategyDebug || Date.now() - this._lastStrategyDebug > 10000) {
-            this._lastStrategyDebug = Date.now();
-            console.log(`🔍 [Strategy Debug] currentPrice=${this.currentPrice}, openPrice=${this.todayOpenPrice}, isWatching=${this.isWatching}, todayTradeDone=${this.todayTradeDone}, withinHours=${this.isWithinTradingHours()}`);
-        }
-
         if (!this.currentPrice || !this.todayOpenPrice) return;
         if (this.todayTradeDone || !this.isWatching) return;
 
