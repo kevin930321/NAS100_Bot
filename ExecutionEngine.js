@@ -62,7 +62,6 @@ class ExecutionEngine extends EventEmitter {
         try {
             const state = await this.db.loadState();
             if (state) {
-                // 注意：balance 不再從資料庫載入，現在從 cTrader API 即時取得
                 this.wins = state.wins || 0;
                 this.losses = state.losses || 0;
                 this.trades = state.trades || [];
@@ -844,13 +843,11 @@ class ExecutionEngine extends EventEmitter {
     async saveState() {
         try {
             const state = {
-                // 注意：balance 不再儲存，因為從 cTrader API 即時取得
                 wins: this.wins,
                 losses: this.losses,
                 trades: this.trades,
                 todayTradeDone: this.todayTradeDone,
-                lastResetDate: this.lastResetDate, // 新增：保存重置日期
-                // positions 不再儲存，直接從 cTrader API 即時取得
+                lastResetDate: this.lastResetDate,
                 config: {
                     entryOffset: this.entryOffset,
                     longTP: this.longTP,

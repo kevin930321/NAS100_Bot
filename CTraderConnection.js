@@ -205,10 +205,6 @@ class CTraderConnection extends EventEmitter {
     /**
      * 處理接收到的資料
      */
-
-    /**
-     * 處理接收到的資料
-     */
     handleIncomingData(data) {
         // 將新資料追加到緩衝區
         this.incomingBuffer = Buffer.concat([this.incomingBuffer, data]);

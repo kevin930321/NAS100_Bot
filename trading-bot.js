@@ -53,17 +53,11 @@ class TradingBot {
 
             await this.connection.connect();
 
-            // 註：sendAccountAuth 會由上面的 listener 觸發，或在此手動觸發均可
-            // 為求保險，這裡等待一下，但其實上面的 event handler 已經會處理
-
-            // 3. 建立交易引擎
+            // 建立交易引擎
             this.engine = new ExecutionEngine(this.connection, config, db);
             await this.engine.initialize();
 
-            // 4. 訂閱市場數據 (將改由 engine 監聽 account-auth-success 自動觸發)
-            // await this.engine.subscribeToMarketData(); 
-
-            // 5. 綁定事件
+            // 綁定事件
             this.bindEvents();
 
             console.log('✅ 機器人初始化完成');
@@ -228,7 +222,7 @@ class TradingBot {
         }
 
         // 盯盤時間到了
-        // 只在精確的盯盤時間 (07:01) 才觸發，不在之後的時間自動補觸發
+        // 只在精確的盯盤時間才觸發，不在之後的時間自動補觸發
         // 這樣可以防止重啟後自動開始盯盤
         const isWatchTime = hour === target.hour && minute === target.minute;
 
