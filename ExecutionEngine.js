@@ -123,10 +123,18 @@ class ExecutionEngine extends EventEmitter {
                     ? p.tradeData.openTimestamp.toNumber()
                     : p.tradeData.openTimestamp;
 
+                // Debug: 顯示原始數值
+                console.log(`🔍 [Debug] Position raw data: price=${price}, volume=${volume}, moneyDigits=${p.moneyDigits}`);
+
+                // cTrader API: price 單位是 symbol 的 pipPosition 相關
+                // 需要根據 moneyDigits 來轉換 (通常 NAS100 是 2 位小數)
+                const digits = p.moneyDigits || 2;
+                const realPrice = price / Math.pow(10, digits);
+
                 return {
                     id: positionId,
                     type: isBuy ? 'long' : 'short',
-                    entryPrice: price / 100000, // 轉換為真實價格
+                    entryPrice: realPrice,
                     volume: volume,
                     openTime: new Date(openTimestamp)
                 };

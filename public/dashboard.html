@@ -525,7 +525,7 @@
                                     ${typeIcon} ${pos.type.toUpperCase()}
                                 </div>
                                 <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
-                                    Entry: ${pos.entryPrice?.toFixed(1) || '--'} | Volume: ${pos.volume || '--'}
+                                    Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Volume: ${pos.volume != null ? (pos.volume / 100).toFixed(2) + ' lots' : '--'}
                                 </div>
                             </div>
                             <div style="text-align: right;">
@@ -664,8 +664,8 @@
                 document.getElementById('wins').textContent = data.wins;
                 document.getElementById('losses').textContent = data.losses;
                 const total = data.wins + data.losses;
-                document.getElementById('win-rate').textContent = total > 0 
-                    ? ((data.wins / total) * 100).toFixed(1) + '%' 
+                document.getElementById('win-rate').textContent = total > 0
+                    ? ((data.wins / total) * 100).toFixed(1) + '%'
                     : '--';
             }
             if (data.leverage) {
@@ -715,7 +715,7 @@
                                     ${typeIcon} ${pos.type.toUpperCase()}
                                 </div>
                                 <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
-                                    Entry: ${pos.entryPrice?.toFixed(1) || '--'} | Volume: ${pos.volume || '--'}
+                                    Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Volume: ${pos.volume != null ? (pos.volume / 100).toFixed(2) + ' lots' : '--'}
                                 </div>
                             </div>
                             <div style="text-align: right;">
