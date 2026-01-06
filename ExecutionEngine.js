@@ -108,12 +108,27 @@ class ExecutionEngine extends EventEmitter {
             this.positions = positions.map(p => {
                 const side = p.tradeData.tradeSide; // 可能是 1 (BUY) 或 'BUY'
                 const isBuy = side === 1 || side === 'BUY';
+
+                // 處理 protobuf Long 物件轉換
+                const positionId = typeof p.positionId === 'object' && p.positionId.toNumber
+                    ? p.positionId.toNumber()
+                    : p.positionId;
+                const volume = typeof p.volume === 'object' && p.volume.toNumber
+                    ? p.volume.toNumber()
+                    : p.volume;
+                const price = typeof p.price === 'object' && p.price.toNumber
+                    ? p.price.toNumber()
+                    : p.price;
+                const openTimestamp = typeof p.tradeData.openTimestamp === 'object' && p.tradeData.openTimestamp.toNumber
+                    ? p.tradeData.openTimestamp.toNumber()
+                    : p.tradeData.openTimestamp;
+
                 return {
-                    id: p.positionId,
+                    id: positionId,
                     type: isBuy ? 'long' : 'short',
-                    entryPrice: p.price,
-                    volume: p.volume,
-                    openTime: new Date(p.tradeData.openTimestamp)
+                    entryPrice: price / 100000, // 轉換為真實價格
+                    volume: volume,
+                    openTime: new Date(openTimestamp)
                 };
             });
 
@@ -497,7 +512,11 @@ class ExecutionEngine extends EventEmitter {
 
                     // 設定 SL/TP（基於開盤價）
                     if (this.pendingSlTp && execution.position) {
-                        const positionId = execution.position.positionId;
+                        // 處理 protobuf Long 物件
+                        const rawPositionId = execution.position.positionId;
+                        const positionId = typeof rawPositionId === 'object' && rawPositionId.toNumber
+                            ? rawPositionId.toNumber()
+                            : rawPositionId;
                         console.log(`📝 正在設定 SL/TP for position ${positionId}...`);
                         this.setPositionSlTp(positionId, this.pendingSlTp.stopLoss, this.pendingSlTp.takeProfit);
                         this.pendingSlTp = null;
