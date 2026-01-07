@@ -1077,10 +1077,6 @@ class ExecutionEngine extends EventEmitter {
         const MAX_RETRIES = 1;
         const RETRY_DELAY_MS = 30000; // 30 秒
 
-        if (this.todayOpenPrice !== null) {
-            console.log('ℹ️ 已有開盤價，跳過取得');
-            return true;
-        }
         if (this.isFetchingOpenPrice) return false;
 
         this.isFetchingOpenPrice = true;
