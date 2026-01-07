@@ -1081,7 +1081,6 @@ class ExecutionEngine extends EventEmitter {
 
         // 先清除舊的開盤價，防止取得失敗時使用舊資料進行交易
         this.todayOpenPrice = null;
-        console.log('🔄 正在取得開盤價（已清除舊開盤價）...');
 
         this.isFetchingOpenPrice = true;
         try {
