@@ -430,6 +430,11 @@ console.log = function (...args) {
     logs.unshift(msg);
     if (logs.length > 50) logs.pop();
     originalLog.apply(console, args);
+
+    // 透過 Socket.IO 即時推送新日誌
+    if (bot.io) {
+        bot.io.emit('new-log', msg);
+    }
 };
 
 // 健康檢查端點（給 UptimeRobot）

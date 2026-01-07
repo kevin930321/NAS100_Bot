@@ -628,6 +628,18 @@
                 socket.on('trade-closed', (trade) => {
                     console.log('📉 平倉通知:', trade);
                 });
+
+                // 即時日誌推送
+                socket.on('new-log', (msg) => {
+                    const logContainer = document.getElementById('logs');
+                    const newLogDiv = document.createElement('div');
+                    newLogDiv.textContent = msg;
+                    logContainer.insertBefore(newLogDiv, logContainer.firstChild);
+                    // 保持最多 50 筆
+                    while (logContainer.children.length > 50) {
+                        logContainer.removeChild(logContainer.lastChild);
+                    }
+                });
             };
             document.head.appendChild(script);
         }
