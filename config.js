@@ -62,8 +62,8 @@ module.exports = {
     // 市場時間設定 (CME Globex)
     market: {
         symbol: 'NAS100', // cTrader symbol name
-        hoursAfterOpen: 8,  // 開盤後 8 小時
-        minsAfterOpen: 1,   // 再加 1 分鐘（總共 8:01）開始盯盤
+        minsAfterOpen: getEnvNumber('MINS_AFTER_OPEN', 1), // 開盤後幾分鐘開始盯盤
+        baselineOffsetMinutes: getEnvNumber('BASELINE_OFFSET_MINUTES', 0), // 使用開盤後幾分鐘的價格作為基準點 (0=開盤價)
 
         // 冬令時間 (UTC-5) -> 台北 07:00 開盤
         winter: {

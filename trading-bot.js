@@ -170,13 +170,12 @@ class TradingBot {
         const isDst = this.isUsDst(now);
         const marketConfig = isDst ? config.market.summer : config.market.winter;
 
-        // 開盤後 N 小時 M 分開始盯盤
-        const hoursAfterOpen = config.market.hoursAfterOpen || 8;
-        const minsAfterOpen = config.market.minsAfterOpen || 0;
+        // 優先使用 engine 的動態設定，否則使用 config 預設值
+        const minsAfterOpen = this.engine?.minsAfterOpen ?? config.market.minsAfterOpen;
 
-        const totalMinutes = marketConfig.openMinute + minsAfterOpen;
-        const targetHour = marketConfig.openHour + hoursAfterOpen + Math.floor(totalMinutes / 60);
-        const targetMinute = totalMinutes % 60;
+        const targetMinuteTotal = marketConfig.openMinute + minsAfterOpen;
+        const targetHour = marketConfig.openHour + Math.floor(targetMinuteTotal / 60);
+        const targetMinute = targetMinuteTotal % 60;
 
         return { hour: targetHour, minute: targetMinute, isDst };
     }
@@ -221,7 +220,10 @@ class TradingBot {
             if (this.engine) {
                 this.resetDaily();
                 this.lastResetDate = today;
-                // 基準點將在盯盤時間到達後頻繁嘗試取得
+
+                // 新交易日重置後，立即嘗試取得開盤價
+                console.log('🔄 新交易日，嘗試取得今日開盤價...');
+                this.engine.fetchAndSetOpenPrice();
             }
         }
 
@@ -520,7 +522,7 @@ app.post('/api/action', async (req, res) => {
                 if (bot.engine) {
                     const success = await bot.engine.fetchAndSetOpenPrice();
                     if (!success) {
-                        return res.json({ success: false, message: '無法取得基準點', state: bot.getStatus() });
+                        return res.json({ success: false, message: '無法取得開盤價', state: bot.getStatus() });
                     }
                 }
                 break;

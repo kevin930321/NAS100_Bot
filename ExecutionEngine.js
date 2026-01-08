@@ -27,6 +27,10 @@ class ExecutionEngine extends EventEmitter {
         this.shortSL = config.strategy.shortSL;
         this.lotSize = config.account.baseLotSize;
 
+        // 盯盤時間設定
+        this.minsAfterOpen = config.market.minsAfterOpen || 1; // 開盤後幾分鐘開始盯盤
+        this.baselineOffsetMinutes = config.market.baselineOffsetMinutes || 0; // 基準點偏移 (0=開盤價)
+
         // 狀態追蹤 (餘額從 cTrader API 即時取得，不使用預設值)
         this.balance = null;
         this.positions = [];
@@ -36,7 +40,6 @@ class ExecutionEngine extends EventEmitter {
         this.isWatching = false;
         this.isPlacingOrder = false; // 並發鎖
         this.orderFailureCount = 0; // 訂單失敗計數
-        this.lastBasePriceFetchAttempt = null; // 上次嘗試取得基準點的時間
 
         // 統計
         this.wins = 0;
@@ -46,7 +49,7 @@ class ExecutionEngine extends EventEmitter {
         // 緩存
         this.symbolInfoCache = {};
 
-        // TradingView WebSocket (用於獲取基準點)
+        // TradingView WebSocket (用於獲取開盤價)
         this.tvWs = null;
         this.tvOpenPrice = null;
         this.tvReconnectTimeout = null;
@@ -81,6 +84,9 @@ class ExecutionEngine extends EventEmitter {
                     this.longSL = state.config.longSL || this.longSL;
                     this.shortSL = state.config.shortSL || this.shortSL;
                     this.lotSize = state.config.lotSize || this.lotSize;
+                    // 新增盯盤時間設定
+                    if (state.config.minsAfterOpen !== undefined) this.minsAfterOpen = state.config.minsAfterOpen;
+                    if (state.config.baselineOffsetMinutes !== undefined) this.baselineOffsetMinutes = state.config.baselineOffsetMinutes;
                     console.log('⚙️ 策略參數已從資料庫恢復');
                 }
 
@@ -92,10 +98,13 @@ class ExecutionEngine extends EventEmitter {
 
             // 重要：啟動時強制清除盯盤狀態
             // 必須等待 07:01 的 cron 觸發才能開始盯盤
-            // 這可以防止重啟後自動使用舊的基準點開始交易
+            // 這可以防止重啟後自動使用舊的開盤價開始交易
             this.isWatching = false;
             this.todayOpenPrice = null;
-            console.log('⏳ 等待盯盤訊號 (07:01 cron 觸發)...');
+            console.log('⏳ 等待盯盤訊號 (cron 觸發)...');
+
+            // 啟動基準價輪詢（只要市場開盤就持續每 30 秒獲取一次）
+            this.startBaselinePricePolling();
 
         } catch (error) {
             console.error('❌ 初始化失敗:', error);
@@ -448,15 +457,6 @@ class ExecutionEngine extends EventEmitter {
             this.currentBid = bid;
             this.currentAsk = ask;
 
-            // 持續取得基準點（每 30 秒更新一次）
-            if (!this.isFetchingOpenPrice) {
-                const now = Date.now();
-                if (!this.lastBasePriceFetchAttempt || now - this.lastBasePriceFetchAttempt > 30000) {
-                    this.lastBasePriceFetchAttempt = now;
-                    this.fetchAndSetOpenPrice();
-                }
-            }
-
             // 發出價格更新事件 (用於 Socket.IO 即時推送)
             this.emit('price-update', {
                 price: this.currentPrice,
@@ -545,7 +545,7 @@ class ExecutionEngine extends EventEmitter {
                     this.saveState();
                     console.log('✅ 開倉成功，今日交易任務完成');
 
-                    // 設定 SL/TP（基於基準點）
+                    // 設定 SL/TP（基於開盤價）
                     if (this.pendingSlTp && execution.position) {
                         // 處理 protobuf Long 物件
                         const rawPositionId = execution.position.positionId;
@@ -712,14 +712,14 @@ class ExecutionEngine extends EventEmitter {
         const diff = this.currentPrice - this.todayOpenPrice;
         const offsetRaw = this.entryOffset * multiplier;
 
-        // 做空條件：價格高於基準點 + 進場偏移
+        // 做空條件：價格高於開盤 + 進場偏移
         if (diff >= offsetRaw) {
-            console.log(`📉 訊號觸發: 現價(${this.currentPrice}) >= 基準點(${this.todayOpenPrice}) + Offset(${offsetRaw})`);
+            console.log(`📉 訊號觸發: 現價(${this.currentPrice}) >= 開盤(${this.todayOpenPrice}) + Offset(${offsetRaw})`);
             this.openPosition('short');
         }
-        // 做多條件：價格低於基準點 - 進場偏移
+        // 做多條件：價格低於開盤 - 進場偏移
         else if (diff <= -offsetRaw) {
-            console.log(`📈 訊號觸發: 現價(${this.currentPrice}) <= 基準點(${this.todayOpenPrice}) - Offset(${offsetRaw})`);
+            console.log(`📈 訊號觸發: 現價(${this.currentPrice}) <= 開盤(${this.todayOpenPrice}) - Offset(${offsetRaw})`);
             this.openPosition('long');
         }
     }
@@ -755,8 +755,8 @@ class ExecutionEngine extends EventEmitter {
 
             console.log(`📊 下單量: ${this.lotSize} lots = ${volume} volume units`);
 
-            // 計算基於基準點的 TP/SL 絕對價格
-            // 策略：TP/SL 是相對於「基準點」而非「成交價」
+            // 計算基於開盤價的 TP/SL 絕對價格
+            // 策略：TP/SL 是相對於「開盤價」而非「成交價」
             const apiMultiplier = 100000;
             const openPriceReal = this.todayOpenPrice / apiMultiplier;
 
@@ -816,11 +816,11 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
-     * 設定今日基準點
+     * 設定今日開盤價
      */
     setTodayOpenPrice(price) {
         this.todayOpenPrice = price;
-        console.log(`📊 今日基準點: ${price}`);
+        console.log(`📊 今日開盤價: ${price}`);
     }
 
     /**
@@ -849,6 +849,9 @@ class ExecutionEngine extends EventEmitter {
         this.isPlacingOrder = false;
         this.orderFailureCount = 0;
 
+        // 停止基準價輪詢
+        this.stopBaselinePricePolling();
+
         // 記錄重置日期
         this.lastResetDate = todayStr;
 
@@ -873,7 +876,9 @@ class ExecutionEngine extends EventEmitter {
                     shortTP: this.shortTP,
                     longSL: this.longSL,
                     shortSL: this.shortSL,
-                    lotSize: this.lotSize
+                    lotSize: this.lotSize,
+                    minsAfterOpen: this.minsAfterOpen,
+                    baselineOffsetMinutes: this.baselineOffsetMinutes
                 },
                 lastUpdate: new Date()
             };
@@ -884,8 +889,8 @@ class ExecutionEngine extends EventEmitter {
         }
     }
     async fetchDailyOpenPrice() {
-        const hoursAfterOpen = this.config.market.hoursAfterOpen || 8;
-        console.log(`🔄 正在從 cTrader 獲取基準點 (M1 at 開盤+${hoursAfterOpen}hr)...`);
+        const offsetMinutes = this.baselineOffsetMinutes || 0;
+        console.log(`🔄 正在從 cTrader 獲取今日基準價 (M1 at Open Time + ${offsetMinutes} 分鐘)...`);
         try {
             const ProtoOAGetTrendbarsReq = this.connection.proto.lookupType('ProtoOAGetTrendbarsReq');
             const ProtoOATrendbarPeriod = this.connection.proto.lookupEnum('ProtoOATrendbarPeriod');
@@ -893,38 +898,44 @@ class ExecutionEngine extends EventEmitter {
             const symbolData = await this.getSymbolInfo(this.config.market.symbol);
             if (!symbolData) throw new Error('Symbol info not found');
 
-            // 動態計算：開盤時間 + hoursAfterOpen
+            // 計算今天的開盤時間
             const now = new Date();
             const isDst = this.checkIsUsDst(now);
             const marketConfig = isDst ? this.config.market.summer : this.config.market.winter;
 
-            // 計算台北時區的開盤時間，再轉為 UTC
-            // 台北 = UTC+8
-            const taipeiOffsetHours = 8;
-            const openHourUtc = marketConfig.openHour - taipeiOffsetHours;
-            const targetHourUtc = openHourUtc + hoursAfterOpen;
+            // 修正：使用台北時區 (UTC+8) 計算開盤時間
+            // 避免伺服器時區不同導致計算錯誤
+            const TAIPEI_OFFSET = 8 * 60 * 60 * 1000; // UTC+8 in milliseconds
 
-            // 計算今日目標時間 (UTC) - 開盤後 8 小時整
-            const targetTime = new Date(Date.UTC(
-                now.getUTCFullYear(),
-                now.getUTCMonth(),
-                now.getUTCDate(),
-                targetHourUtc, marketConfig.openMinute, 0, 0
-            ));
+            // 取得當前 UTC 時間
+            const nowUtc = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+            // 轉換為台北時間
+            const nowTaipei = new Date(nowUtc + TAIPEI_OFFSET);
 
-            // 如果當前時間還沒到目標時間，退回一天
-            if (now.getTime() < targetTime.getTime()) {
-                console.warn('⚠️ 當前時間早於目標時間，嘗試獲取昨日資料...');
-                targetTime.setUTCDate(targetTime.getUTCDate() - 1);
+            // 計算今日開盤時間（台北時間）
+            const openTimeTaipei = new Date(nowTaipei);
+            openTimeTaipei.setHours(marketConfig.openHour, marketConfig.openMinute, 0, 0);
+
+            // 如果當前台北時間還沒到開盤，退回一天
+            if (nowTaipei < openTimeTaipei) {
+                console.warn('⚠️ 當前時間早於今日開盤時間，嘗試獲取昨日開盤價...');
+                openTimeTaipei.setDate(openTimeTaipei.getDate() - 1);
             }
 
-            const targetTimestamp = targetTime.getTime();
-            const seasonStr = isDst ? '夏令' : '冬令';
-            console.log(`📅 鎖定時間: ${targetTime.toISOString()} (${seasonStr} 開盤+${hoursAfterOpen}hr)`);
+            // 將台北時間轉回 UTC timestamp (供 API 使用)
+            const openTimeUtc = openTimeTaipei.getTime() - TAIPEI_OFFSET - openTimeTaipei.getTimezoneOffset() * 60 * 1000;
 
-            // 請求 M1 K 線（改用 1 分鐘線）
-            const fromTimestamp = targetTimestamp - 60000;  // 提早 1 分鐘
-            const toTimestamp = targetTimestamp + 300000;   // 往後 5 分鐘
+            // 加上基準點偏移
+            const baselineTimeUtc = openTimeUtc + (offsetMinutes * 60000);
+            const baselineTimeTaipei = new Date(baselineTimeUtc + TAIPEI_OFFSET);
+
+            console.log(`📅 鎖定基準時間: ${baselineTimeTaipei.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })} (台北時間, 偏移 ${offsetMinutes} 分鐘)`);
+
+            // 請求該分鐘的 M1 K 線
+            // 請求前後 5 分鐘的 K 線，確保能包含到目標時間
+            // 有時候 API 邊界處理可能會漏掉剛好在起始點的資料
+            const fromTimestamp = baselineTimeUtc - 60000; // 提早 1 分鐘
+            const toTimestamp = baselineTimeUtc + 300000;  // 往後 5 分鐘
 
             const request = ProtoOAGetTrendbarsReq.create({
                 ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
@@ -940,8 +951,10 @@ class ExecutionEngine extends EventEmitter {
             const payload = ProtoOAGetTrendbarsRes.decode(response.payload);
 
             if (payload.trendbar && payload.trendbar.length > 0) {
-                // 尋找目標時間的 M1 K 線
-                const targetMinute = Math.floor(targetTimestamp / 60000);
+                // 尋找時間戳記剛好等於 baselineTimeUtc 的 K 線
+                // cTrader Trendbar timestamp 是 UTC 分鐘數 (沒有毫秒)
+                // 我們可以直接比對 utcTimestampInMinutes
+                const targetMinute = Math.floor(baselineTimeUtc / 60000);
 
                 const targetBar = payload.trendbar.find(bar => bar.utcTimestampInMinutes === targetMinute);
 
@@ -952,18 +965,16 @@ class ExecutionEngine extends EventEmitter {
 
                     // Debug: 顯示這根 K 線的實際時間
                     const barTimeUtc = targetBar.utcTimestampInMinutes * 60000;
-                    console.log(`🔍 [Debug] M1 K線時間: ${new Date(barTimeUtc).toISOString()}`);
-                    console.log(`✅ 取得基準點: ${openPrice} (Raw Points)`);
+                    const barTimeTaipei = new Date(barTimeUtc).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+                    console.log(`🔍 [Debug] K線時間: ${barTimeTaipei} (UTC: ${new Date(barTimeUtc).toISOString()})`);
+
+                    console.log(`✅ 取得 cTrader 精確基準價 (${baselineTimeTaipei.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei' })}): ${openPrice} (Raw Points)`);
                     return openPrice;
                 } else {
-                    console.warn(`⚠️ 找到 K 線資料，但沒有目標時間的資料`);
-                    // 列出可用的 K 線時間以便除錯
-                    if (payload.trendbar.length > 0) {
-                        const availableTimes = payload.trendbar.map(bar =>
-                            new Date(bar.utcTimestampInMinutes * 60000).toISOString()
-                        ).join(', ');
-                        console.log(`   可用時間: ${availableTimes}`);
-                    }
+                    console.warn(`⚠️ 找到 K 線資料，但沒有目標時間的資料 (最近: ${new Date(payload.trendbar[0].utcTimestampInMinutes * 60000).toISOString()})`);
+
+                    // 如果真的沒有 07:00，是否要用最接近的一根？
+                    // 目前先回傳 null 讓它重試
                     return null;
                 }
             } else {
@@ -971,7 +982,7 @@ class ExecutionEngine extends EventEmitter {
                 return null;
             }
         } catch (error) {
-            console.error('❌ 取得基準點失敗:', error.message);
+            console.error('❌ 取得基準價失敗:', error.message);
             return null;
         }
     }
@@ -1087,18 +1098,14 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
-     * 取得並設定基準點（新交易日時呼叫）
-     * 優先使用 TradingView WebSocket，失敗則使用 cTrader API
-     * @param {number} retryCount - 當前重試次數（內部使用）
+     * 取得並設定基準價（每 30 秒輪詢一次）
+     * 使用 cTrader API 獲取基準價
+     * 會持續每 30 秒嘗試獲取，直到今日交易完成或手動停止
      */
-    async fetchAndSetOpenPrice(retryCount = 0) {
-        const MAX_RETRIES = 1;
-        const RETRY_DELAY_MS = 30000; // 30 秒
+    async fetchAndSetOpenPrice() {
+        const POLL_INTERVAL_MS = 30000; // 30 秒
 
         if (this.isFetchingOpenPrice) return false;
-
-        // 先清除舊的基準點，防止取得失敗時使用舊資料進行交易
-        this.todayOpenPrice = null;
 
         this.isFetchingOpenPrice = true;
         try {
@@ -1109,50 +1116,60 @@ class ExecutionEngine extends EventEmitter {
                 return false;
             }
 
-            let price = null;
-
-            // 使用 cTrader API 取得基準點
-            price = await this.fetchDailyOpenPrice();
+            // 使用 cTrader API 取得基準價
+            const price = await this.fetchDailyOpenPrice();
             if (price !== null) {
                 this.setTodayOpenPrice(price);
                 return true;
             }
 
-            // 兩種方法都失敗，嘗試重試
-            if (retryCount < MAX_RETRIES) {
-                console.warn(`⚠️ 尚未取得有效基準點，${RETRY_DELAY_MS / 1000} 秒後重試 (${retryCount + 1}/${MAX_RETRIES})...`);
-                this.isFetchingOpenPrice = false; // 先釋放鎖
-
-                // 設定延遲重試
-                setTimeout(() => {
-                    this.fetchAndSetOpenPrice(retryCount + 1);
-                }, RETRY_DELAY_MS);
-
-                return false;
-            } else {
-                console.error('❌ 多次重試後仍無法取得基準點，將在盯盤時間再次嘗試');
-                return false;
-            }
+            // 取得失敗（可能是 K 線還沒形成）
+            const offsetMinutes = this.baselineOffsetMinutes || 0;
+            console.warn(`⚠️ 尚未取得有效基準價 (開盤+${offsetMinutes}分鐘)，等待下次輪詢...`);
+            return false;
         } finally {
             this.isFetchingOpenPrice = false;
         }
     }
 
     /**
+     * 啟動基準價輪詢（每 30 秒獲取一次）
+     */
+    startBaselinePricePolling() {
+        const POLL_INTERVAL_MS = 30000; // 30 秒
+
+        // 如果已經在輪詢中，不重複啟動
+        if (this.baselinePricePollingInterval) {
+            return;
+        }
+
+        console.log('🔄 啟動基準價輪詢 (每 30 秒)...');
+
+        // 立即執行一次
+        this.fetchAndSetOpenPrice();
+
+        // 每 30 秒執行一次 (只要市場開盤就持續輪詢)
+        this.baselinePricePollingInterval = setInterval(async () => {
+            await this.fetchAndSetOpenPrice();
+        }, POLL_INTERVAL_MS);
+    }
+
+    /**
+     * 停止基準價輪詢
+     */
+    stopBaselinePricePolling() {
+        if (this.baselinePricePollingInterval) {
+            clearInterval(this.baselinePricePollingInterval);
+            this.baselinePricePollingInterval = null;
+            console.log('⏹️ 基準價輪詢已停止');
+        }
+    }
+
+    /**
      * 開始盯盤 (非同步)
-     * 如果已有基準點，直接開始盯盤；否則嘗試取得
      */
     async startWatching() {
         if (this.isWatching || this.todayTradeDone) return;
-
-        // 如果還沒有基準點，嘗試取得
-        if (this.todayOpenPrice === null) {
-            const success = await this.fetchAndSetOpenPrice();
-            if (!success) {
-                console.warn('⚠️ 無法取得基準點，暫停盯盤');
-                return;
-            }
-        }
 
         // 開始盯盤
         this.isWatching = true;
@@ -1187,7 +1204,9 @@ class ExecutionEngine extends EventEmitter {
                 shortTP: this.shortTP,
                 longSL: this.longSL,
                 shortSL: this.shortSL,
-                lotSize: this.lotSize
+                lotSize: this.lotSize,
+                minsAfterOpen: this.minsAfterOpen,
+                baselineOffsetMinutes: this.baselineOffsetMinutes
             }
         };
     }
@@ -1202,6 +1221,8 @@ class ExecutionEngine extends EventEmitter {
         if (newConfig.longSL !== undefined) this.longSL = parseFloat(newConfig.longSL);
         if (newConfig.shortSL !== undefined) this.shortSL = parseFloat(newConfig.shortSL);
         if (newConfig.lotSize !== undefined) this.lotSize = parseFloat(newConfig.lotSize);
+        if (newConfig.minsAfterOpen !== undefined) this.minsAfterOpen = parseInt(newConfig.minsAfterOpen);
+        if (newConfig.baselineOffsetMinutes !== undefined) this.baselineOffsetMinutes = parseInt(newConfig.baselineOffsetMinutes);
 
         console.log('⚙️ 策略參數已更新');
         this.saveState();
@@ -1302,7 +1323,7 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
-     * 設定持倉的 SL/TP（基於基準點）
+     * 設定持倉的 SL/TP（基於開盤價）
      * @param {number} positionId - 持倉 ID
      * @param {number} stopLoss - 止損價格（真實價格）
      * @param {number} takeProfit - 止盈價格（真實價格）
@@ -1330,7 +1351,7 @@ class ExecutionEngine extends EventEmitter {
      */
     connectTradingView() {
         if (!this.config.tradingView) {
-            console.log('ℹ️ 未設定 TradingView，使用 cTrader API 獲取基準點');
+            console.log('ℹ️ 未設定 TradingView，使用 cTrader API 獲取開盤價');
             return;
         }
 
@@ -1458,10 +1479,10 @@ class ExecutionEngine extends EventEmitter {
                     if (quoteData?.v) {
                         const v = quoteData.v;
 
-                        // 更新基準點 (關鍵: 只在還沒有基準點時設定)
+                        // 更新開盤價 (關鍵: 只在還沒有開盤價時設定)
                         if (v.open_price && this.tvOpenPrice === null) {
                             this.tvOpenPrice = v.open_price;
-                            console.log(`📊 TradingView 基準點: ${this.tvOpenPrice}`);
+                            console.log(`📊 TradingView 開盤價: ${this.tvOpenPrice}`);
                         }
                     }
                 }
