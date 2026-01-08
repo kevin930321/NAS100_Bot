@@ -313,7 +313,7 @@
             <div class="card-label">即時價格</div>
             <div class="price-display" id="current-price">--</div>
             <div style="text-align: center; font-size: 0.95rem; color: #94a3b8;">
-                開盤價: <span id="open-price" style="color: white; font-weight: 600;">--</span>
+                基準點: <span id="open-price" style="color: white; font-weight: 600;">--</span>
                 &nbsp;|&nbsp;
                 價差: <span id="price-diff" style="font-weight: 600;">--</span>
             </div>
@@ -398,7 +398,7 @@
             <div class="card-label">🎮 操作控制</div>
             <div class="actions-row">
                 <button class="btn-primary" onclick="toggleWatch()">👁️ 切換盯盤</button>
-                <button class="btn-success" onclick="fetchOpenPrice()">📊 取得開盤價</button>
+                <button class="btn-success" onclick="fetchOpenPrice()">📊 取得基準點</button>
                 <button class="btn-warning" onclick="resetDaily()">🔄 重置今日狀態</button>
                 <button class="btn-danger" onclick="closeAllPositions()">⚠️ 緊急平倉</button>
             </div>
@@ -836,10 +836,10 @@
             });
             const data = await res.json();
             if (data.success) {
-                alert('✅ 開盤價已取得');
+                alert('✅ 基準點已取得');
                 updateUI(data.state);
             } else {
-                alert('❌ ' + (data.message || '取得開盤價失敗'));
+                alert('❌ ' + (data.message || '取得基準點失敗'));
             }
         }
 

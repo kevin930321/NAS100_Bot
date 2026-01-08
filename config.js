@@ -62,7 +62,7 @@ module.exports = {
     // 市場時間設定 (CME Globex)
     market: {
         symbol: 'NAS100', // cTrader symbol name
-        minsAfterOpen: 1,
+        hoursAfterOpen: 8,  // 開盤後 8 小時開始盯盤
 
         // 冬令時間 (UTC-5) -> 台北 07:00 開盤
         winter: {
