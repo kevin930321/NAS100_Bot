@@ -885,7 +885,7 @@ class ExecutionEngine extends EventEmitter {
     }
     async fetchDailyOpenPrice() {
         const hoursAfterOpen = this.config.market.hoursAfterOpen || 8;
-        console.log(`🔄 正在從 cTrader 獲取基準點 (H1 at 開盤+${hoursAfterOpen}hr)...`);
+        console.log(`🔄 正在從 cTrader 獲取基準點 (M1 at 開盤+${hoursAfterOpen}hr)...`);
         try {
             const ProtoOAGetTrendbarsReq = this.connection.proto.lookupType('ProtoOAGetTrendbarsReq');
             const ProtoOATrendbarPeriod = this.connection.proto.lookupEnum('ProtoOATrendbarPeriod');
@@ -904,7 +904,7 @@ class ExecutionEngine extends EventEmitter {
             const openHourUtc = marketConfig.openHour - taipeiOffsetHours;
             const targetHourUtc = openHourUtc + hoursAfterOpen;
 
-            // 計算今日目標時間 (UTC)
+            // 計算今日目標時間 (UTC) - 開盤後 8 小時整
             const targetTime = new Date(Date.UTC(
                 now.getUTCFullYear(),
                 now.getUTCMonth(),
@@ -922,17 +922,17 @@ class ExecutionEngine extends EventEmitter {
             const seasonStr = isDst ? '夏令' : '冬令';
             console.log(`📅 鎖定時間: ${targetTime.toISOString()} (${seasonStr} 開盤+${hoursAfterOpen}hr)`);
 
-            // 請求 H1 K 線
-            const fromTimestamp = targetTimestamp - 3600000; // 提早 1 小時
-            const toTimestamp = targetTimestamp + 3600000;   // 往後 1 小時
+            // 請求 M1 K 線（改用 1 分鐘線）
+            const fromTimestamp = targetTimestamp - 60000;  // 提早 1 分鐘
+            const toTimestamp = targetTimestamp + 300000;   // 往後 5 分鐘
 
             const request = ProtoOAGetTrendbarsReq.create({
                 ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
-                period: ProtoOATrendbarPeriod.values.H1,
+                period: ProtoOATrendbarPeriod.values.M1,
                 symbolId: symbolData.symbolId,
                 fromTimestamp: fromTimestamp,
                 toTimestamp: toTimestamp,
-                count: 5
+                count: 10
             });
 
             const response = await this.connection.send('ProtoOAGetTrendbarsReq', request);
@@ -940,7 +940,7 @@ class ExecutionEngine extends EventEmitter {
             const payload = ProtoOAGetTrendbarsRes.decode(response.payload);
 
             if (payload.trendbar && payload.trendbar.length > 0) {
-                // 尋找目標時間的 H1 K 線
+                // 尋找目標時間的 M1 K 線
                 const targetMinute = Math.floor(targetTimestamp / 60000);
 
                 const targetBar = payload.trendbar.find(bar => bar.utcTimestampInMinutes === targetMinute);
@@ -952,11 +952,18 @@ class ExecutionEngine extends EventEmitter {
 
                     // Debug: 顯示這根 K 線的實際時間
                     const barTimeUtc = targetBar.utcTimestampInMinutes * 60000;
-                    console.log(`🔍 [Debug] K線時間: ${new Date(barTimeUtc).toISOString()}`);
+                    console.log(`🔍 [Debug] M1 K線時間: ${new Date(barTimeUtc).toISOString()}`);
                     console.log(`✅ 取得基準點: ${openPrice} (Raw Points)`);
                     return openPrice;
                 } else {
                     console.warn(`⚠️ 找到 K 線資料，但沒有目標時間的資料`);
+                    // 列出可用的 K 線時間以便除錯
+                    if (payload.trendbar.length > 0) {
+                        const availableTimes = payload.trendbar.map(bar =>
+                            new Date(bar.utcTimestampInMinutes * 60000).toISOString()
+                        ).join(', ');
+                        console.log(`   可用時間: ${availableTimes}`);
+                    }
                     return null;
                 }
             } else {
