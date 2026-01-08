@@ -1104,26 +1104,10 @@ class ExecutionEngine extends EventEmitter {
 
             let price = null;
 
-            // 方法 1: 優先使用 TradingView WebSocket
-            if (this.config.tradingView) {
-                console.log('🔄 嘗試從 TradingView 獲取基準點...');
-                price = await this.fetchOpenPriceFromTradingView(15000); // 15 秒超時
-                if (price !== null) {
-                    // TradingView 回傳的是真實價格，需要轉換為 cTrader Raw Points
-                    const rawPrice = price * 100000;
-                    this.setTodayOpenPrice(rawPrice);
-                    console.log(`✅ 基準點已從 TradingView 鎖定: ${price} (Raw: ${rawPrice})`);
-                    return true;
-                } else {
-                    console.warn('⚠️ TradingView 獲取基準點失敗，嘗試 cTrader API...');
-                }
-            }
-
-            // 方法 2: 使用 cTrader API
+            // 使用 cTrader API 取得基準點
             price = await this.fetchDailyOpenPrice();
             if (price !== null) {
                 this.setTodayOpenPrice(price);
-                console.log('✅ 基準點已從 cTrader 鎖定，等待盯盤時間...');
                 return true;
             }
 
