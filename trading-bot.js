@@ -75,25 +75,50 @@ class TradingBot {
      * 綁定事件監聽
      */
     bindEvents() {
-        // 交易事件
+        // 交易事件 (不再每次發送 Discord 通知)
         this.engine.on('trade-opened', (trade) => {
-            const msg = `**${trade.type === 'long' ? '📈 做多' : '📉 做空'}** | 價格: ${trade.price} | TP: ${trade.tp} | SL: ${trade.sl}`;
-            this.sendDiscord(msg);
             // Socket.IO 推送
             if (this.io) {
                 this.io.emit('trade-opened', trade);
             }
         });
 
-        // 平倉事件
+        // 平倉事件 - 每 100 次結算發送一次統計報告
         this.engine.on('trade-closed', (trade) => {
-            const icon = trade.profit >= 0 ? '💰' : '💸';
-            const typeStr = trade.type === 'long' ? '多單' : '空單';
-            const msg = `${icon} **${typeStr}平倉** | 損益: $${trade.profit.toFixed(2)} | 餘額: $${trade.balance.toFixed(2)}`;
-            this.sendDiscord(msg);
             // Socket.IO 推送
             if (this.io) {
                 this.io.emit('trade-closed', trade);
+            }
+
+            // 每 100 次結算發送 Discord 統計報告
+            const totalTrades = this.engine.wins + this.engine.losses;
+            if (totalTrades > 0 && totalTrades % 100 === 0) {
+                // 計算累計統計
+                const totalWinRate = ((this.engine.wins / totalTrades) * 100).toFixed(1);
+                const totalProfit = this.engine.trades.reduce((sum, t) => sum + (t.profit || 0), 0);
+
+                // 計算本期區間統計 (最近 100 次)
+                const periodWins = this.engine.wins - this.engine.lastReportWins;
+                const periodLosses = this.engine.losses - this.engine.lastReportLosses;
+                const periodTotal = periodWins + periodLosses;
+                const periodWinRate = periodTotal > 0 ? ((periodWins / periodTotal) * 100).toFixed(1) : '0.0';
+                const periodProfit = totalProfit - this.engine.lastReportProfit;
+
+                // 計算區間範圍
+                const fromTrade = totalTrades - 99;
+                const toTrade = totalTrades;
+
+                const msg = `📊 **第 ${fromTrade}-${toTrade} 次結算報告**\n` +
+                    `✅ 本期勝率: ${periodWinRate}% (${periodWins}勝/${periodLosses}敗)\n` +
+                    `💰 本期損益: $${periodProfit.toFixed(2)}\n` +
+                    `📈 累計勝率: ${totalWinRate}% (${this.engine.wins}勝/${this.engine.losses}敗)\n` +
+                    `💵 當前餘額: $${this.engine.balance?.toFixed(2) || '--'}`;
+                this.sendDiscord(msg);
+
+                // 更新追蹤變數供下次報告使用
+                this.engine.lastReportWins = this.engine.wins;
+                this.engine.lastReportLosses = this.engine.losses;
+                this.engine.lastReportProfit = totalProfit;
             }
         });
 
@@ -152,9 +177,7 @@ class TradingBot {
         const timeStr = `${target.hour}:${target.minute.toString().padStart(2, '0')}`;
         const seasonStr = target.isDst ? '夏令' : '冬令';
 
-        const msg = `目前為美股 ${seasonStr}時間\n等待 **${timeStr}** 開始盯盤...`;
-        console.log(msg.replace(/\*\*/g, ''));
-        this.sendDiscord(msg);
+        console.log(`目前為美股 ${seasonStr}時間，等待 ${timeStr} 開始盯盤...`);
 
         // 每分鐘檢查時間
         cron.schedule('* * * * *', () => {
@@ -221,8 +244,8 @@ class TradingBot {
                 this.resetDaily();
                 this.lastResetDate = today;
 
-                // 新交易日重置後，立即嘗試取得開盤價
-                console.log('🔄 新交易日，嘗試取得今日開盤價...');
+                // 新交易日重置後，立即嘗試取得基準點
+                console.log('🔄 新交易日，嘗試取得今日基準點...');
                 this.engine.fetchAndSetOpenPrice();
             }
         }
@@ -236,9 +259,8 @@ class TradingBot {
             // 如果尚未開始盯盤，嘗試啟動
             if (!this.engine.isWatching) {
                 console.log(`⏰ ${target.hour}:${target.minute.toString().padStart(2, '0')} 觸發盯盤機制！`);
-                this.sendDiscord(`⏰ **觸發盯盤機制！** (${isDst ? '夏令' : '冬令'}時間 ${target.hour}:${target.minute.toString().padStart(2, '0')})`);
 
-                // 嘗試開始盯盤 (內部會去 fetch 開盤價，失敗則下次 checkTime 再試)
+                // 嘗試開始盯盤 (內部會去 fetch 基準點，失敗則下次 checkTime 再試)
                 this.engine.startWatching();
             }
         }
@@ -522,7 +544,7 @@ app.post('/api/action', async (req, res) => {
                 if (bot.engine) {
                     const success = await bot.engine.fetchAndSetOpenPrice();
                     if (!success) {
-                        return res.json({ success: false, message: '無法取得開盤價', state: bot.getStatus() });
+                        return res.json({ success: false, message: '無法取得基準點', state: bot.getStatus() });
                     }
                 }
                 break;

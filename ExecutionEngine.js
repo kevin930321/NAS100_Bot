@@ -29,7 +29,7 @@ class ExecutionEngine extends EventEmitter {
 
         // 盯盤時間設定
         this.minsAfterOpen = config.market.minsAfterOpen || 1; // 開盤後幾分鐘開始盯盤
-        this.baselineOffsetMinutes = config.market.baselineOffsetMinutes || 0; // 基準點偏移 (0=開盤價)
+        this.baselineOffsetMinutes = config.market.baselineOffsetMinutes || 0; // 基準點偏移 (0=開盤時)
 
         // 狀態追蹤 (餘額從 cTrader API 即時取得，不使用預設值)
         this.balance = null;
@@ -46,13 +46,13 @@ class ExecutionEngine extends EventEmitter {
         this.losses = 0;
         this.trades = [];
 
+        // 區間統計追蹤 (用於 Discord 報告)
+        this.lastReportWins = 0;
+        this.lastReportLosses = 0;
+        this.lastReportProfit = 0;
+
         // 緩存
         this.symbolInfoCache = {};
-
-        // TradingView WebSocket (用於獲取開盤價)
-        this.tvWs = null;
-        this.tvOpenPrice = null;
-        this.tvReconnectTimeout = null;
 
         // 綁定訊息處理
         this.connection.on('message', this.handleMarketData.bind(this));
@@ -97,8 +97,7 @@ class ExecutionEngine extends EventEmitter {
             await this.reconcilePositions();
 
             // 重要：啟動時強制清除盯盤狀態
-            // 必須等待 07:01 的 cron 觸發才能開始盯盤
-            // 這可以防止重啟後自動使用舊的開盤價開始交易
+            // 這可以防止重啟後自動使用舊的基準點開始交易
             this.isWatching = false;
             this.todayOpenPrice = null;
             console.log('⏳ 等待盯盤訊號 (cron 觸發)...');
@@ -545,7 +544,7 @@ class ExecutionEngine extends EventEmitter {
                     this.saveState();
                     console.log('✅ 開倉成功，今日交易任務完成');
 
-                    // 設定 SL/TP（基於開盤價）
+                    // 設定 SL/TP（基於基準點）
                     if (this.pendingSlTp && execution.position) {
                         // 處理 protobuf Long 物件
                         const rawPositionId = execution.position.positionId;
@@ -755,8 +754,8 @@ class ExecutionEngine extends EventEmitter {
 
             console.log(`📊 下單量: ${this.lotSize} lots = ${volume} volume units`);
 
-            // 計算基於開盤價的 TP/SL 絕對價格
-            // 策略：TP/SL 是相對於「開盤價」而非「成交價」
+            // 計算基於基準點的 TP/SL 絕對價格
+            // 策略：TP/SL 是相對於「基準點」而非「成交價」
             const apiMultiplier = 100000;
             const openPriceReal = this.todayOpenPrice / apiMultiplier;
 
@@ -816,11 +815,11 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
-     * 設定今日開盤價
+     * 設定今日基準點
      */
     setTodayOpenPrice(price) {
         this.todayOpenPrice = price;
-        console.log(`📊 今日開盤價: ${price}`);
+        console.log(`📊 今日基準點: ${price}`);
     }
 
     /**
@@ -844,7 +843,6 @@ class ExecutionEngine extends EventEmitter {
 
         this.todayTradeDone = false;
         this.todayOpenPrice = null;
-        this.tvOpenPrice = null;
         this.isWatching = false;
         this.isPlacingOrder = false;
         this.orderFailureCount = 0;
@@ -918,7 +916,7 @@ class ExecutionEngine extends EventEmitter {
 
             // 如果當前台北時間還沒到開盤，退回一天
             if (nowTaipei < openTimeTaipei) {
-                console.warn('⚠️ 當前時間早於今日開盤時間，嘗試獲取昨日開盤價...');
+                console.warn('⚠️ 當前時間早於今日開盤時間，嘗試獲取昨日基準點...');
                 openTimeTaipei.setDate(openTimeTaipei.getDate() - 1);
             }
 
@@ -1323,7 +1321,7 @@ class ExecutionEngine extends EventEmitter {
     }
 
     /**
-     * 設定持倉的 SL/TP（基於開盤價）
+     * 設定持倉的 SL/TP（基於基準點）
      * @param {number} positionId - 持倉 ID
      * @param {number} stopLoss - 止損價格（真實價格）
      * @param {number} takeProfit - 止盈價格（真實價格）
@@ -1344,192 +1342,6 @@ class ExecutionEngine extends EventEmitter {
             console.error('❌ 設定 SL/TP 失敗:', error.message);
             // 即使 SL/TP 設定失敗，訂單仍已成交，交易員需要手動處理
         }
-    }
-
-    /**
-     * 連接 TradingView WebSocket
-     */
-    connectTradingView() {
-        if (!this.config.tradingView) {
-            console.log('ℹ️ 未設定 TradingView，使用 cTrader API 獲取開盤價');
-            return;
-        }
-
-        try {
-            console.log('📡 正在連接 TradingView WebSocket...');
-
-            this.tvWs = new WebSocket(this.config.tradingView.wsUrl, {
-                headers: {
-                    'Origin': 'https://www.tradingview.com'
-                }
-            });
-
-            this.tvWs.on('open', () => {
-                console.log('✅ TradingView WebSocket 連接成功');
-
-                // 生成 session ID
-                const sessionId = this.generateTvSessionId();
-                const quoteSession = 'qs_' + sessionId;
-
-                // 設置 quote session
-                this.sendTvMessage('quote_create_session', [quoteSession]);
-                this.sendTvMessage('quote_set_fields', [
-                    quoteSession,
-                    'lp', 'ch', 'chp', 'open_price', 'high_price', 'low_price', 'prev_close_price'
-                ]);
-
-                // 訂閱 NAS100
-                this.sendTvMessage('quote_add_symbols', [
-                    quoteSession,
-                    this.config.tradingView.symbol
-                ]);
-
-                console.log(`📈 TradingView 已訂閱 ${this.config.tradingView.symbol}`);
-            });
-
-            this.tvWs.on('message', (data) => {
-                this.handleTvMessage(data.toString());
-            });
-
-            this.tvWs.on('close', () => {
-                console.log('⚠️ TradingView WebSocket 連接關閉');
-                this.scheduleTvReconnect();
-            });
-
-            this.tvWs.on('error', (error) => {
-                console.error('❌ TradingView WebSocket 錯誤:', error.message);
-                this.scheduleTvReconnect();
-            });
-
-        } catch (error) {
-            console.error('❌ TradingView 連接失敗:', error.message);
-            this.scheduleTvReconnect();
-        }
-    }
-
-    /**
-     * 斷開 TradingView WebSocket
-     */
-    disconnectTradingView() {
-        if (this.tvReconnectTimeout) {
-            clearTimeout(this.tvReconnectTimeout);
-            this.tvReconnectTimeout = null;
-        }
-        if (this.tvWs) {
-            this.tvWs.close();
-            this.tvWs = null;
-        }
-    }
-
-    /**
-     * 重新連接 TradingView
-     */
-    scheduleTvReconnect() {
-        if (this.tvReconnectTimeout) {
-            clearTimeout(this.tvReconnectTimeout);
-        }
-        console.log('🔄 5 秒後重新連接 TradingView...');
-        this.tvReconnectTimeout = setTimeout(() => {
-            this.connectTradingView();
-        }, 5000);
-    }
-
-    /**
-     * 生成 TradingView session ID
-     */
-    generateTvSessionId() {
-        return Math.random().toString(36).substring(2, 14);
-    }
-
-    /**
-     * 發送 TradingView 訊息
-     */
-    sendTvMessage(method, params) {
-        const msg = JSON.stringify({ m: method, p: params });
-        const packet = '~m~' + msg.length + '~m~' + msg;
-        if (this.tvWs && this.tvWs.readyState === WebSocket.OPEN) {
-            this.tvWs.send(packet);
-        }
-    }
-
-    /**
-     * 處理 TradingView 訊息
-     */
-    handleTvMessage(data) {
-        // 處理心跳
-        if (data.includes('~h~')) {
-            const heartbeatMatch = data.match(/~h~(\d+)/);
-            if (heartbeatMatch && this.tvWs && this.tvWs.readyState === WebSocket.OPEN) {
-                const heartbeatNum = heartbeatMatch[1];
-                const response = '~m~' + ('~h~' + heartbeatNum).length + '~m~~h~' + heartbeatNum;
-                this.tvWs.send(response);
-            }
-            return;
-        }
-
-        // 解析價格數據
-        const messages = data.split(/~m~\d+~m~/);
-        for (const msg of messages) {
-            if (!msg || msg.startsWith('~h~')) continue;
-
-            try {
-                const parsed = JSON.parse(msg);
-                if (parsed.m === 'qsd') {
-                    const quoteData = parsed.p?.[1];
-                    if (quoteData?.v) {
-                        const v = quoteData.v;
-
-                        // 更新開盤價 (關鍵: 只在還沒有開盤價時設定)
-                        if (v.open_price && this.tvOpenPrice === null) {
-                            this.tvOpenPrice = v.open_price;
-                            console.log(`📊 TradingView 開盤價: ${this.tvOpenPrice}`);
-                        }
-                    }
-                }
-            } catch (e) {
-                // 忽略非 JSON
-            }
-        }
-    }
-
-    /**
-     * 從 TradingView 獲取開盤價 (Promise 版本，有超時機制)
-     * @param {number} timeoutMs - 超時時間 (毫秒)
-     * @returns {Promise<number|null>} 開盤價或 null
-     */
-    fetchOpenPriceFromTradingView(timeoutMs = 10000) {
-        return new Promise((resolve) => {
-            // 如果已經有開盤價，直接返回
-            if (this.tvOpenPrice !== null) {
-                resolve(this.tvOpenPrice);
-                return;
-            }
-
-            // 如果 WebSocket 未連接，先連接
-            if (!this.tvWs || this.tvWs.readyState !== WebSocket.OPEN) {
-                this.connectTradingView();
-            }
-
-            // 設定超時
-            const timeout = setTimeout(() => {
-                console.warn('⚠️ TradingView 開盤價獲取超時');
-                resolve(null);
-            }, timeoutMs);
-
-            // 輪詢檢查開盤價
-            const checkInterval = setInterval(() => {
-                if (this.tvOpenPrice !== null) {
-                    clearTimeout(timeout);
-                    clearInterval(checkInterval);
-                    resolve(this.tvOpenPrice);
-                }
-            }, 500);
-
-            // 超時後清除輪詢
-            setTimeout(() => {
-                clearInterval(checkInterval);
-            }, timeoutMs);
-        });
     }
 }
 

@@ -63,7 +63,7 @@ module.exports = {
     market: {
         symbol: 'NAS100', // cTrader symbol name
         minsAfterOpen: getEnvNumber('MINS_AFTER_OPEN', 1), // 開盤後幾分鐘開始盯盤
-        baselineOffsetMinutes: getEnvNumber('BASELINE_OFFSET_MINUTES', 0), // 使用開盤後幾分鐘的價格作為基準點 (0=開盤價)
+        baselineOffsetMinutes: getEnvNumber('BASELINE_OFFSET_MINUTES', 0), // 使用開盤後幾分鐘的價格作為基準點 (0=開盤時)
 
         // 冬令時間 (UTC-5) -> 台北 07:00 開盤
         winter: {
@@ -75,12 +75,6 @@ module.exports = {
             openHour: 6,
             openMinute: 0
         }
-    },
-
-    // TradingView WebSocket (用於獲取開盤價)
-    tradingView: {
-        wsUrl: 'wss://data.tradingview.com/socket.io/websocket',
-        symbol: 'PEPPERSTONE:NAS100'  // Pepperstone NAS100
     },
 
     // Discord 通知
