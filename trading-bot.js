@@ -57,6 +57,9 @@ class TradingBot {
             this.engine = new ExecutionEngine(this.connection, config, db);
             await this.engine.initialize();
 
+            this.lastResetDate = this.engine.lastResetDate;
+            console.log(`📅 同步重置日期: ${this.lastResetDate || '無'}`);
+
             // 綁定事件
             this.bindEvents();
 

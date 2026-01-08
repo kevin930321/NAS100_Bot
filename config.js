@@ -76,6 +76,12 @@ module.exports = {
         }
     },
 
+    // TradingView WebSocket (用於獲取開盤價)
+    tradingView: {
+        wsUrl: 'wss://data.tradingview.com/socket.io/websocket',
+        symbol: 'OANDA:NAS100USD'  // TradingView symbol for NAS100
+    },
+
     // Discord 通知
     discord: {
         webhookUrl: getEnvString('DISCORD_WEBHOOK_URL', ''),
