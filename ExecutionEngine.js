@@ -36,6 +36,7 @@ class ExecutionEngine extends EventEmitter {
         this.isWatching = false;
         this.isPlacingOrder = false; // 並發鎖
         this.orderFailureCount = 0; // 訂單失敗計數
+        this.lastBasePriceFetchAttempt = null; // 上次嘗試取得基準點的時間
 
         // 統計
         this.wins = 0;
@@ -446,6 +447,15 @@ class ExecutionEngine extends EventEmitter {
             this.currentPrice = (bid + ask) / 2;
             this.currentBid = bid;
             this.currentAsk = ask;
+
+            // 持續取得基準點（每 30 秒更新一次）
+            if (!this.isFetchingOpenPrice) {
+                const now = Date.now();
+                if (!this.lastBasePriceFetchAttempt || now - this.lastBasePriceFetchAttempt > 30000) {
+                    this.lastBasePriceFetchAttempt = now;
+                    this.fetchAndSetOpenPrice();
+                }
+            }
 
             // 發出價格更新事件 (用於 Socket.IO 即時推送)
             this.emit('price-update', {

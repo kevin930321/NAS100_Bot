@@ -170,10 +170,13 @@ class TradingBot {
         const isDst = this.isUsDst(now);
         const marketConfig = isDst ? config.market.summer : config.market.winter;
 
-        // 開盤後 N 小時開始盯盤
+        // 開盤後 N 小時 M 分開始盯盤
         const hoursAfterOpen = config.market.hoursAfterOpen || 8;
-        const targetHour = marketConfig.openHour + hoursAfterOpen;
-        const targetMinute = marketConfig.openMinute;
+        const minsAfterOpen = config.market.minsAfterOpen || 0;
+
+        const totalMinutes = marketConfig.openMinute + minsAfterOpen;
+        const targetHour = marketConfig.openHour + hoursAfterOpen + Math.floor(totalMinutes / 60);
+        const targetMinute = totalMinutes % 60;
 
         return { hour: targetHour, minute: targetMinute, isDst };
     }
@@ -218,10 +221,7 @@ class TradingBot {
             if (this.engine) {
                 this.resetDaily();
                 this.lastResetDate = today;
-
-                // 新交易日重置後，立即嘗試取得開盤價
-                console.log('🔄 新交易日，嘗試取得今日基準點...');
-                this.engine.fetchAndSetOpenPrice();
+                // 基準點將在盯盤時間到達後頻繁嘗試取得
             }
         }
 
