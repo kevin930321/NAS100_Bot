@@ -847,9 +847,6 @@ class ExecutionEngine extends EventEmitter {
         this.isPlacingOrder = false;
         this.orderFailureCount = 0;
 
-        // 停止基準價輪詢
-        this.stopBaselinePricePolling();
-
         // 記錄重置日期
         this.lastResetDate = todayStr;
 
