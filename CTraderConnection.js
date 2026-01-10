@@ -268,7 +268,8 @@ class CTraderConnection extends EventEmitter {
             case 'ProtoOAErrorRes':
                 const ErrorRes = this.proto.lookupType('ProtoOAErrorRes');
                 const errorPayload = ErrorRes.decode(message.payload);
-                console.error(`❌ API 錯誤: ${errorPayload.errorCode} - ${errorPayload.description}`);
+                console.error(`❌ API 錯誤: Code=${errorPayload.errorCode}, Desc=${errorPayload.description || '無描述'}, Maintenance=${errorPayload.maintenanceEndTimestamp || 'N/A'}`);
+                console.error(`   詳細: ${JSON.stringify(errorPayload)}`);
                 this.emit('api-error', errorPayload);
                 break;
 
