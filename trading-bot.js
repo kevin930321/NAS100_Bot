@@ -419,7 +419,8 @@ const MAX_LOGS = 100;  // 日誌最大保留數量
 const logs = [];
 const originalLog = console.log;
 console.log = function (...args) {
-    const msg = `[${new Date().toLocaleTimeString()}] ${args.join(' ')}`;
+    const taipeiTime = new Date().toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+    const msg = `[${taipeiTime}] ${args.join(' ')}`;
     logs.unshift(msg);
     if (logs.length > MAX_LOGS) logs.pop();
     originalLog.apply(console, args);
