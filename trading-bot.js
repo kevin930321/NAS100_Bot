@@ -1,9 +1,5 @@
-/**
- * NAS100 真實交易機器人 - cTrader 版本
- * 架構：cTrader Open API + ExecutionEngine + Express Dashboard
- */
+/** NAS100 真實交易機器人 - cTrader Open API + ExecutionEngine + Express Dashboard */
 
-// 載入環境變數（必須在最前面）
 require('dotenv').config();
 
 const cron = require('node-cron');
@@ -12,34 +8,34 @@ const http = require('http');
 const express = require('express');
 const path = require('path');
 const { Server } = require('socket.io');
-
 // 載入配置與模組
 const config = require('./config');
 const CTraderConnection = require('./CTraderConnection');
 const ExecutionEngine = require('./ExecutionEngine');
 const db = require('./db');
+const { isUsDst } = require('./utils');
+const TokenManager = require('./tokenManager');
 
 class TradingBot {
     constructor() {
-        // cTrader 連線與交易引擎
         this.connection = null;
         this.engine = null;
-        this.io = null; // Socket.IO 伺服器
-
-        // 時間追蹤
+        this.tokenManager = null;
+        this.io = null;
         this.lastDate = null;
         this.lastResetDate = null;
-
         console.log('🤖 NAS100 真實交易機器人初始化...');
     }
 
-    /**
-     * 初始化機器人
-     */
+    /** 初始化機器人 */
     async init() {
         try {
+            // 0. 啟動 Token 自動更新
+            this.tokenManager = new TokenManager(config);
+            this.tokenManager.startAutoRefresh();
+
             // 1. 建立 cTrader 連線
-            this.connection = new CTraderConnection(config);
+            this.connection = new CTraderConnection(config, this.tokenManager);
 
             // 自動重連後的認證邏輯
             this.connection.on('app-auth-success', async () => {
@@ -71,11 +67,8 @@ class TradingBot {
         }
     }
 
-    /**
-     * 綁定事件監聽
-     */
+    /** 綁定事件監聽 */
     bindEvents() {
-        // 交易事件 (不再每次發送 Discord 通知)
         this.engine.on('trade-opened', (trade) => {
             // Socket.IO 推送
             if (this.io) {
@@ -157,8 +150,7 @@ class TradingBot {
                 this.io.emit('account-update', data);
             }
         });
-
-        // 持倉同步完成
+        // 佈倉同步完成
         this.engine.on('positions-reconciled', (positions) => {
             if (this.io) {
                 this.io.emit('positions-update', { positions });
@@ -166,9 +158,7 @@ class TradingBot {
         });
     }
 
-    /**
-     * 啟動機器人
-     */
+    /** 啟動機器人 */
     start() {
         console.log('🚀 交易機器人啟動');
 
@@ -185,12 +175,10 @@ class TradingBot {
         });
     }
 
-    /**
-     * 取得盯盤時間
-     */
+    /** 取得盯盤時間 */
     getTargetWatchTime() {
         const now = new Date();
-        const isDst = this.isUsDst(now);
+        const isDst = isUsDst(now);
         const marketConfig = isDst ? config.market.summer : config.market.winter;
 
         // 優先使用 engine 的動態設定，否則使用 config 預設值
@@ -203,9 +191,7 @@ class TradingBot {
         return { hour: targetHour, minute: targetMinute, isDst };
     }
 
-    /**
-     * 檢查時間並執行動作
-     */
+    /** 檢查時間並執行動作 */
     checkTime() {
         // --- 連線看門狗 (Connection Watchdog) ---
         // 防止週末維護導致斷線後，週一無法自動恢復
@@ -266,24 +252,7 @@ class TradingBot {
         }
     }
 
-    /**
-     * 判斷美股夏令時間
-     */
-    isUsDst(date) {
-        const year = date.getFullYear();
-        let dstStart = new Date(year, 2, 1);
-        while (dstStart.getDay() !== 0) dstStart.setDate(dstStart.getDate() + 1);
-        dstStart.setDate(dstStart.getDate() + 7);
-
-        let dstEnd = new Date(year, 10, 1);
-        while (dstEnd.getDay() !== 0) dstEnd.setDate(dstEnd.getDate() + 1);
-
-        const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        const ds = new Date(dstStart.getFullYear(), dstStart.getMonth(), dstStart.getDate());
-        const de = new Date(dstEnd.getFullYear(), dstEnd.getMonth(), dstEnd.getDate());
-
-        return d >= ds && d < de;
-    }
+    // isUsDst 已移至 utils.js
 
     /**
      * 判斷美股假日
@@ -298,18 +267,14 @@ class TradingBot {
         return false;
     }
 
-    /**
-     * 每日重置
-     */
+    /** 每日重置 */
     async resetDaily() {
         if (this.engine) {
             await this.engine.resetDaily();
         }
     }
 
-    /**
-     * 發送 Discord 通知
-     */
+    /** 發送 Discord 通知 */
     sendDiscord(message) {
         if (!config.discord.webhookUrl || !config.discord.enabled) {
             return;
@@ -342,9 +307,7 @@ class TradingBot {
         req.end();
     }
 
-    /**
-     * 取得狀態
-     */
+    /** 取得狀態 */
     getStatus() {
         if (!this.engine) {
             return {
@@ -451,12 +414,13 @@ if (DASHBOARD_PASS) {
 }
 
 // 日誌系統
+const MAX_LOGS = 100;  // 日誌最大保留數量
 const logs = [];
 const originalLog = console.log;
 console.log = function (...args) {
     const msg = `[${new Date().toLocaleTimeString()}] ${args.join(' ')}`;
     logs.unshift(msg);
-    if (logs.length > 50) logs.pop();
+    if (logs.length > MAX_LOGS) logs.pop();
     originalLog.apply(console, args);
 
     // 透過 Socket.IO 即時推送新日誌

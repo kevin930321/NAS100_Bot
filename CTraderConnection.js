@@ -1,12 +1,5 @@
 /**
- * CTraderConnection - cTrader Open API 連線管理模組
- * 
- * 功能：
- * - TCP Socket 連線管理
- * - Protobuf 訊息編碼/解碼
- * - Heartbeat 維持
- * - 自動斷線重連
- * - Auth 機制
+ * CTraderConnection - cTrader Open API 連線管理
  */
 
 const net = require('net');
@@ -15,38 +8,39 @@ const protobuf = require('protobufjs');
 const path = require('path');
 const EventEmitter = require('events');
 
+const CONNECTION_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 30000;
+const HEARTBEAT_INTERVAL_MS = 10000;
+const HEARTBEAT_TIMEOUT_MS = 30000;
+const MAX_RECONNECT_DELAY_MS = 60000;
+const CLEANUP_INTERVAL_MS = 60000;
+
 class CTraderConnection extends EventEmitter {
-    constructor(config) {
+    constructor(config, tokenManager = null) {
         super();
 
         this.config = config;
+        this.tokenManager = tokenManager;
         this.socket = null;
         this.proto = null;
         this.connected = false;
         this.authenticated = false;
 
-        // 重連機制
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
-        this.reconnectDelay = 1000; // 初始延遲 1秒
+        this.reconnectDelay = 1000;
         this.reconnectTimeout = null;
 
-        // Heartbeat
         this.heartbeatInterval = null;
         this.lastHeartbeat = Date.now();
 
-        // Message handling
         this.messageQueue = [];
-        this.pendingRequests = new Map(); // clientMsgId -> callback
+        this.pendingRequests = new Map();
         this.nextClientMsgId = 1;
-
-        // TCP Buffer
         this.incomingBuffer = Buffer.alloc(0);
     }
 
-    /**
-     * 載入 Protobuf 定義檔
-     */
+    /** 載入 Protobuf 定義檔 */
     async loadProto() {
         try {
             // 同時載入所有定義，確保能處理 Heartbeat 與 Model
@@ -67,9 +61,7 @@ class CTraderConnection extends EventEmitter {
         }
     }
 
-    /**
-     * 連接到 cTrader 伺服器
-     */
+    /** 連接到 cTrader 伺服器 */
     async connect() {
         if (!this.proto) {
             await this.loadProto();
@@ -81,16 +73,14 @@ class CTraderConnection extends EventEmitter {
             console.log(`📡 正在連接 cTrader ${this.config.ctrader.mode} 伺服器...`);
             console.log(`   Host: ${host}:${port}`);
 
-            // 使用 TLS 加密連線 (cTrader API 要求)
             this.socket = tls.connect({
                 host: host,
                 port: port,
-                rejectUnauthorized: true  // 驗證伺服器憑證
+                rejectUnauthorized: true
             }, () => {
                 console.log('✅ TLS 連線建立成功');
                 this.connected = true;
                 this.reconnectAttempts = 0;
-
                 // 發送 ApplicationAuth 請求
                 this.sendApplicationAuth()
                     .then(() => {
@@ -130,9 +120,7 @@ class CTraderConnection extends EventEmitter {
         });
     }
 
-    /**
-     * 發送 Application Auth
-     */
+    /** 發送 Application Auth */
     async sendApplicationAuth() {
         const ProtoOAApplicationAuthReq = this.proto.lookupType('ProtoOAApplicationAuthReq');
         const message = ProtoOAApplicationAuthReq.create({
@@ -143,22 +131,23 @@ class CTraderConnection extends EventEmitter {
         return this.send('ProtoOAApplicationAuthReq', message);
     }
 
-    /**
-     * 發送 Account Auth
-     */
+    /** 發送 Account Auth */
     async sendAccountAuth() {
+        // 優先使用 TokenManager 的動態 Token
+        const accessToken = this.tokenManager
+            ? this.tokenManager.getAccessToken()
+            : this.config.ctrader.accessToken;
+
         const ProtoOAAccountAuthReq = this.proto.lookupType('ProtoOAAccountAuthReq');
         const message = ProtoOAAccountAuthReq.create({
             ctidTraderAccountId: parseInt(this.config.ctrader.accountId),
-            accessToken: this.config.ctrader.accessToken
+            accessToken: accessToken
         });
 
         return this.send('ProtoOAAccountAuthReq', message);
     }
 
-    /**
-     * 發送訊息（通用）
-     */
+    /** 發送訊息（通用） */
     async send(payloadType, payload) {
         if (!this.socket || !this.connected) {
             throw new Error('Socket 未連線');
@@ -192,19 +181,17 @@ class CTraderConnection extends EventEmitter {
                 }
             });
 
-            // 超時處理（30 秒）
+            // 超時處理
             setTimeout(() => {
                 if (this.pendingRequests.has(clientMsgId.toString())) {
                     this.pendingRequests.delete(clientMsgId.toString());
                     reject(new Error(`Request timeout: ${payloadType}`));
                 }
-            }, 30000);
+            }, REQUEST_TIMEOUT_MS);
         });
     }
 
-    /**
-     * 處理接收到的資料
-     */
+    /** 處理接收到的資料 */
     handleIncomingData(data) {
         // 將新資料追加到緩衝區
         this.incomingBuffer = Buffer.concat([this.incomingBuffer, data]);
@@ -240,9 +227,7 @@ class CTraderConnection extends EventEmitter {
         }
     }
 
-    /**
-     * 處理解碼後的訊息
-     */
+    /** 處理解碼後的訊息 */
     handleMessage(message) {
         // 收到任何訊息都視為連線活躍 (Heartbeat)
         this.lastHeartbeat = Date.now();
@@ -303,9 +288,7 @@ class CTraderConnection extends EventEmitter {
         this.emit('message', { type: payloadTypeName, payload: message.payload });
     }
 
-    /**
-     * 啟動 Heartbeat
-     */
+    /** 啟動 Heartbeat */
     startHeartbeat() {
         this.stopHeartbeat();
 
@@ -315,8 +298,8 @@ class CTraderConnection extends EventEmitter {
                 return;
             }
 
-            // 檢查是否超過 30 秒沒收到 heartbeat
-            if (Date.now() - this.lastHeartbeat > 30000) {
+            // 檢查 Heartbeat 超時
+            if (Date.now() - this.lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
                 console.error('❌ Heartbeat 超時，斷開連線');
                 this.disconnect();
                 return;
@@ -328,17 +311,15 @@ class CTraderConnection extends EventEmitter {
                 if (this.proto) {
                     const ProtoHeartbeatEvent = this.proto.lookupType('ProtoHeartbeatEvent');
                     const message = ProtoHeartbeatEvent.create({ payloadType: 51 });
-                    this.send('ProtoHeartbeatEvent', message).catch(() => { }); // 忽略發送錯誤，依賴 timeout
+                    this.send('ProtoHeartbeatEvent', message).catch(err => console.debug('Heartbeat 發送忽略:', err.message));
                 }
             } catch (error) {
                 console.error('Heartbeat 發送失敗:', error.message);
             }
-        }, 10000);
+        }, HEARTBEAT_INTERVAL_MS);
     }
 
-    /**
-     * 停止 Heartbeat
-     */
+    /** 停止 Heartbeat */
     stopHeartbeat() {
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
@@ -346,9 +327,7 @@ class CTraderConnection extends EventEmitter {
         }
     }
 
-    /**
-     * 排程重連
-     */
+    /** 排程重連 */
     scheduleReconnect() {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.error('❌ 重連次數已達上限，停止重連');
@@ -356,7 +335,7 @@ class CTraderConnection extends EventEmitter {
             return;
         }
 
-        const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts), 60000);
+        const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts), MAX_RECONNECT_DELAY_MS);
         this.reconnectAttempts++;
 
         console.log(`🔄 將在 ${delay}ms 後重連 (第 ${this.reconnectAttempts} 次嘗試)...`);
@@ -368,9 +347,7 @@ class CTraderConnection extends EventEmitter {
         }, delay);
     }
 
-    /**
-     * 斷開連線
-     */
+    /** 斷開連線 */
     disconnect() {
         this.connected = false;
         this.authenticated = false;
@@ -390,9 +367,15 @@ class CTraderConnection extends EventEmitter {
         console.log('👋 已斷開 cTrader 連線');
     }
 
-    /**
-     * 工具函數：取得 Payload Type ID
-     */
+    /** 檢查連線是否健康 */
+    isHealthy() {
+        if (!this.connected || !this.socket) return false;
+        // 檢查最後心跳時間
+        const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat;
+        return timeSinceLastHeartbeat < HEARTBEAT_TIMEOUT_MS;
+    }
+
+    /** 工具函數：取得 Payload Type ID */
     getPayloadTypeId(typeName) {
         let key;
 
@@ -433,9 +416,7 @@ class CTraderConnection extends EventEmitter {
         }
     }
 
-    /**
-     * 工具函數：取得 Payload Type Name
-     */
+    /** 工具函數：取得 Payload Type Name */
     getPayloadTypeName(typeId) {
         // 根據 ID 範圍判斷 (OA > 2000, Common < 2000)
         if (typeId < 2000) {

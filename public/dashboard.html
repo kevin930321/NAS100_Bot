@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NAS100 cTrader Bot Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -154,7 +155,6 @@
             color: var(--accent-color);
         }
 
-        /* 策略參數表單 */
         .params-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -179,7 +179,6 @@
             font-size: 0.9rem;
         }
 
-        /* 按鈕 */
         button {
             padding: 10px 16px;
             border: none;
@@ -230,7 +229,6 @@
             flex-wrap: wrap;
         }
 
-        /* 持倉卡片 */
         .position-card {
             background: rgba(0, 0, 0, 0.2);
             padding: 12px;
@@ -240,6 +238,7 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 8px;
+            gap: 12px;
         }
 
         .position-long {
@@ -250,7 +249,53 @@
             border-left-color: var(--danger-color);
         }
 
-        /* 日誌區塊 */
+        .position-info {
+            flex: 1;
+        }
+
+        .position-type {
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        .position-details {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+
+        .position-pnl {
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .pnl-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .position-id {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .btn-close-position {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .btn-close-position:hover {
+            background: #dc2626;
+        }
+
         .log-container {
             background: #000;
             padding: 15px;
@@ -275,7 +320,6 @@
             border-radius: 3px;
         }
 
-        /* 無持倉提示 */
         .no-positions {
             text-align: center;
             color: #64748b;
@@ -283,7 +327,6 @@
             font-size: 0.9rem;
         }
 
-        /* 響應式 */
         @media (max-width: 600px) {
             .price-display {
                 font-size: 2.5rem;
@@ -298,7 +341,6 @@
 
 <body>
     <div class="container">
-        <!-- 標題與連線狀態 -->
         <div class="header">
             <h1>🤖 NAS100 cTrader Bot</h1>
             <div class="status-row">
@@ -308,7 +350,6 @@
             </div>
         </div>
 
-        <!-- 價格顯示 -->
         <div class="card">
             <div class="card-label">即時價格</div>
             <div class="price-display" id="current-price">--</div>
@@ -319,7 +360,6 @@
             </div>
         </div>
 
-        <!-- 帳戶統計 -->
         <div class="card">
             <div class="card-label">📊 帳戶統計</div>
             <div class="stats-grid">
@@ -358,51 +398,30 @@
             </div>
         </div>
 
-        <!-- 策略參數 -->
         <div class="card">
-            <div class="card-label">
-                ⚙️ 策略參數
-                <button class="btn-primary" onclick="saveConfig()" style="padding: 6px 12px; font-size: 0.8rem;">💾
-                    儲存</button>
-            </div>
+            <div class="card-label">📈 績效曲線</div>
+            <div style="height: 200px;"><canvas id="equity-chart"></canvas></div>
+        </div>
+
+        <div class="card">
+            <div class="card-label">⚙️ 策略參數<button class="btn-primary" onclick="saveConfig()"
+                    style="padding: 6px 12px; font-size: 0.8rem;">💾 儲存</button></div>
             <div class="params-grid">
-                <div class="form-group">
-                    <label>Entry Offset</label>
-                    <input type="number" id="cfg-entryOffset" value="10">
+                <div class="form-group"><label>Entry Offset</label><input type="number" id="cfg-entryOffset" value="10">
                 </div>
-                <div class="form-group">
-                    <label>Long TP</label>
-                    <input type="number" id="cfg-longTP" value="8">
-                </div>
-                <div class="form-group">
-                    <label>Short TP</label>
-                    <input type="number" id="cfg-shortTP" value="5">
-                </div>
-                <div class="form-group">
-                    <label>Long SL</label>
-                    <input type="number" id="cfg-longSL" value="1000">
-                </div>
-                <div class="form-group">
-                    <label>Short SL</label>
-                    <input type="number" id="cfg-shortSL" value="1000">
-                </div>
-                <div class="form-group">
-                    <label>Lot Size</label>
-                    <input type="number" id="cfg-lotSize" value="0.1" step="0.01">
-                </div>
-                <div class="form-group">
-                    <label>盯盤開始 (分)</label>
-                    <input type="number" id="cfg-minsAfterOpen" value="1" min="0" max="60" title="開盤後幾分鐘開始盯盤">
-                </div>
-                <div class="form-group">
-                    <label>基準偏移 (分)</label>
-                    <input type="number" id="cfg-baselineOffsetMinutes" value="0" min="0" max="60"
-                        title="使用開盤後幾分鐘的價格作為基準點 (0=開盤時)">
-                </div>
+                <div class="form-group"><label>Long TP</label><input type="number" id="cfg-longTP" value="8"></div>
+                <div class="form-group"><label>Short TP</label><input type="number" id="cfg-shortTP" value="5"></div>
+                <div class="form-group"><label>Long SL</label><input type="number" id="cfg-longSL" value="1000"></div>
+                <div class="form-group"><label>Short SL</label><input type="number" id="cfg-shortSL" value="1000"></div>
+                <div class="form-group"><label>Lot Size</label><input type="number" id="cfg-lotSize" value="0.1"
+                        step="0.01"></div>
+                <div class="form-group"><label>盯盤開始 (分)</label><input type="number" id="cfg-minsAfterOpen" value="1"
+                        min="0" max="60"></div>
+                <div class="form-group"><label>基準偏移 (分)</label><input type="number" id="cfg-baselineOffsetMinutes"
+                        value="0" min="0" max="60"></div>
             </div>
         </div>
 
-        <!-- 操作按鈕 -->
         <div class="card">
             <div class="card-label">🎮 操作控制</div>
             <div class="actions-row">
@@ -413,7 +432,6 @@
             </div>
         </div>
 
-        <!-- 持倉列表 -->
         <div class="card">
             <div class="card-label"><span>📈 當前持倉 (<span id="position-count">0</span>)</span></div>
             <div id="positions-list">
@@ -421,7 +439,6 @@
             </div>
         </div>
 
-        <!-- 日誌 -->
         <div class="card">
             <div class="card-label">📜 即時日誌</div>
             <div class="log-container" id="logs">
@@ -432,479 +449,155 @@
 
     <script>
         const API_URL = '/api';
+        const PRICE_MULTIPLIER = 100000;
+        let socket = null, socketConnected = false, lastLogFetch = 0, equityChart = null;
 
-        // 更新 UI
+        // 節流函數
+        function throttle(func, limit) {
+            let inThrottle;
+            return function (...args) {
+                if (!inThrottle) { func.apply(this, args); inThrottle = true; setTimeout(() => inThrottle = false, limit); }
+            };
+        }
+
+        // 格式化損益
+        function formatPnL(pnl) {
+            if (pnl == null) return { text: '--', color: '#94a3b8' };
+            return { text: (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2), color: pnl >= 0 ? '#22c55e' : '#ef4444' };
+        }
+
+        // 持倉卡片模板
+        function renderPositionCard(pos) {
+            const typeClass = pos.type === 'long' ? 'position-long' : 'position-short';
+            const typeIcon = pos.type === 'long' ? '📈' : '📉';
+            const pnl = formatPnL(pos.pnl);
+            return `<div class="position-card ${typeClass}">
+                <div class="position-info"><div class="position-type">${typeIcon} ${pos.type.toUpperCase()}</div>
+                <div class="position-details">Entry: ${pos.entryPrice?.toFixed(2) ?? '--'} | Vol: ${pos.volume?.toFixed(2) ?? '--'}</div></div>
+                <div class="position-pnl"><div class="pnl-value" style="color: ${pnl.color}">${pnl.text}</div><div class="position-id">ID: ${pos.id ?? '--'}</div></div>
+                <button class="btn-close-position" onclick="closePosition(${pos.id})">平倉</button></div>`;
+        }
+
+        function updatePositionsList(positions) {
+            document.getElementById('position-count').textContent = positions.length;
+            document.getElementById('positions-list').innerHTML = positions.length === 0
+                ? '<div class="no-positions">目前無持倉</div>'
+                : positions.map(renderPositionCard).join('');
+        }
+
+        // 績效圖表
+        function initEquityChart() {
+            const canvas = document.getElementById('equity-chart');
+            if (!canvas) return;
+            equityChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: '淨值', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, pointRadius: 3 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#94a3b8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8' } } } }
+            });
+        }
+
+        function updateEquityChart(trades) {
+            if (!equityChart || !trades?.length) return;
+            const sorted = [...trades].reverse();
+            equityChart.data.labels = sorted.map((_, i) => `#${i + 1}`);
+            equityChart.data.datasets[0].data = sorted.map(t => t.balance);
+            equityChart.update('none');
+        }
+
+        // UI 更新
         function updateUI(data) {
-            // 連線狀態
-            const connEl = document.getElementById('connection-status');
-            if (data.connected && data.authenticated) {
-                connEl.textContent = '🟢 已連線';
-                connEl.className = 'status-badge status-connected';
-            } else if (data.connected) {
-                connEl.textContent = '🟡 連線中...';
-                connEl.className = 'status-badge status-watching';
-            } else {
-                connEl.textContent = '🔴 未連線';
-                connEl.className = 'status-badge status-disconnected';
+            const el = (id) => document.getElementById(id);
+            const setConn = (text, cls) => { el('connection-status').textContent = text; el('connection-status').className = 'status-badge ' + cls; };
+            if (data.connected && data.authenticated) setConn('🟢 已連線', 'status-connected');
+            else if (data.connected) setConn('🟡 連線中...', 'status-watching');
+            else setConn('🔴 未連線', 'status-disconnected');
+
+            el('watching-status').textContent = data.isWatching ? '👁️ 盯盤中' : '💤 待機';
+            el('watching-status').className = 'status-badge ' + (data.isWatching ? 'status-watching' : 'status-idle');
+            el('trade-status').textContent = data.todayTradeDone ? '✅ 今日已交易' : '⏳ 等待進場';
+            el('trade-status').className = 'status-badge ' + (data.todayTradeDone ? 'status-connected' : 'status-idle');
+
+            const curPrice = data.currentPrice ? data.currentPrice / PRICE_MULTIPLIER : null;
+            const openPrice = data.openPrice ? data.openPrice / PRICE_MULTIPLIER : null;
+            el('current-price').textContent = curPrice ? curPrice.toFixed(2) : '--';
+            el('open-price').textContent = openPrice ? openPrice.toFixed(2) : '--';
+            if (curPrice && openPrice) {
+                const diff = curPrice - openPrice;
+                el('price-diff').textContent = (diff > 0 ? '+' : '') + diff.toFixed(2);
+                el('price-diff').className = diff > 0 ? 'text-green' : (diff < 0 ? 'text-red' : '');
             }
 
-            // 盯盤狀態
-            const watchEl = document.getElementById('watching-status');
-            if (data.isWatching) {
-                watchEl.textContent = '👁️ 盯盤中';
-                watchEl.className = 'status-badge status-watching';
-            } else {
-                watchEl.textContent = '💤 待機';
-                watchEl.className = 'status-badge status-idle';
-            }
+            el('balance').textContent = '$' + (data.balance || 0).toFixed(2);
+            el('equity').textContent = '$' + (data.equity || data.balance || 0).toFixed(2);
+            el('usedMargin').textContent = '$' + (data.usedMargin || 0).toFixed(2);
+            el('freeMargin').textContent = '$' + (data.freeMargin || data.balance || 0).toFixed(2);
+            el('win-rate').textContent = data.winRate || '--';
+            el('wins').textContent = data.wins || 0;
+            el('losses').textContent = data.losses || 0;
+            el('leverage').textContent = data.leverage ? '1:' + data.leverage : '--';
 
-            // 今日交易狀態
-            const tradeEl = document.getElementById('trade-status');
-            if (data.todayTradeDone) {
-                tradeEl.textContent = '✅ 今日已交易';
-                tradeEl.className = 'status-badge status-connected';
-            } else {
-                tradeEl.textContent = '⏳ 等待進場';
-                tradeEl.className = 'status-badge status-idle';
-            }
+            const eqEl = el('equity');
+            eqEl.className = 'stat-value' + (data.unrealizedPnL > 0 ? ' text-green' : (data.unrealizedPnL < 0 ? ' text-red' : ''));
 
-            // 價格 (API 傳回 Raw Price * 100000，需要轉換為真實價格)
-            const priceMultiplier = 100000;
-            const currentPriceReal = data.currentPrice ? data.currentPrice / priceMultiplier : null;
-            const openPriceReal = data.openPrice ? data.openPrice / priceMultiplier : null;
-
-            document.getElementById('current-price').textContent =
-                currentPriceReal ? currentPriceReal.toFixed(2) : '--';
-            document.getElementById('open-price').textContent =
-                openPriceReal ? openPriceReal.toFixed(2) : '--';
-
-            if (currentPriceReal && openPriceReal) {
-                const diff = currentPriceReal - openPriceReal;
-                const diffEl = document.getElementById('price-diff');
-                diffEl.textContent = (diff > 0 ? '+' : '') + diff.toFixed(2);
-                diffEl.className = diff > 0 ? 'text-green' : (diff < 0 ? 'text-red' : '');
-            }
-
-            // 帳戶統計
-            document.getElementById('balance').textContent = '$' + (data.balance || 0).toFixed(2);
-            document.getElementById('equity').textContent = '$' + (data.equity || data.balance || 0).toFixed(2);
-            document.getElementById('usedMargin').textContent = '$' + (data.usedMargin || 0).toFixed(2);
-            document.getElementById('freeMargin').textContent = '$' + (data.freeMargin || data.balance || 0).toFixed(2);
-            document.getElementById('win-rate').textContent = data.winRate || '--';
-            document.getElementById('wins').textContent = data.wins || 0;
-            document.getElementById('losses').textContent = data.losses || 0;
-            document.getElementById('leverage').textContent = data.leverage ? '1:' + data.leverage : '--';
-
-            // 淨值顏色 (根據未實現損益)
-            const equityEl = document.getElementById('equity');
-            if (data.unrealizedPnL > 0) {
-                equityEl.className = 'stat-value text-green';
-            } else if (data.unrealizedPnL < 0) {
-                equityEl.className = 'stat-value text-red';
-            } else {
-                equityEl.className = 'stat-value';
-            }
-
-            // 策略參數 (只在首次載入時填入)
             if (data.config && !window.configLoaded) {
-                document.getElementById('cfg-entryOffset').value = data.config.entryOffset || 10;
-                document.getElementById('cfg-longTP').value = data.config.longTP || 8;
-                document.getElementById('cfg-shortTP').value = data.config.shortTP || 5;
-                document.getElementById('cfg-longSL').value = data.config.longSL || 1000;
-                document.getElementById('cfg-shortSL').value = data.config.shortSL || 1000;
-                document.getElementById('cfg-lotSize').value = data.config.lotSize || 0.1;
-                document.getElementById('cfg-minsAfterOpen').value = data.config.minsAfterOpen || 1;
-                document.getElementById('cfg-baselineOffsetMinutes').value = data.config.baselineOffsetMinutes || 0;
+                ['entryOffset', 'longTP', 'shortTP', 'longSL', 'shortSL', 'lotSize', 'minsAfterOpen', 'baselineOffsetMinutes'].forEach(f => {
+                    const e = el('cfg-' + f); if (e && data.config[f] !== undefined) e.value = data.config[f];
+                });
                 window.configLoaded = true;
             }
 
-            // 持倉列表
-            const positions = data.positions || [];
-            document.getElementById('position-count').textContent = positions.length;
-            const posListEl = document.getElementById('positions-list');
-
-            if (positions.length === 0) {
-                posListEl.innerHTML = '<div class="no-positions">目前無持倉</div>';
-            } else {
-                posListEl.innerHTML = positions.map(pos => {
-                    const typeClass = pos.type === 'long' ? 'position-long' : 'position-short';
-                    const typeIcon = pos.type === 'long' ? '📈' : '📉';
-
-                    // 計算損益顯示
-                    let pnlDisplay = '--';
-                    let pnlColor = '#94a3b8';
-                    if (pos.pnl != null) {
-                        pnlDisplay = (pos.pnl >= 0 ? '+' : '') + '$' + pos.pnl.toFixed(2);
-                        pnlColor = pos.pnl >= 0 ? '#22c55e' : '#ef4444';
-                    }
-
-                    return `
-                        <div class="position-card ${typeClass}" style="display: flex; align-items: center; gap: 12px;">
-                            <div style="flex: 1;">
-                                <div style="font-weight: 700; font-size: 1.1rem;">
-                                    ${typeIcon} ${pos.type.toUpperCase()}
-                                </div>
-                                <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
-                                    Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Vol: ${pos.volume != null ? pos.volume.toFixed(2) : '--'}
-                                </div>
-                            </div>
-                            <div style="text-align: right; flex-shrink: 0;">
-                                <div style="font-size: 1.1rem; font-weight: 700; color: ${pnlColor};">${pnlDisplay}</div>
-                                <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">ID: ${pos.id || '--'}</div>
-                            </div>
-                            <button onclick="closePosition(${pos.id})" 
-                                    style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600; flex-shrink: 0;"
-                                    onmouseover="this.style.background='#dc2626'" 
-                                    onmouseout="this.style.background='#ef4444'">
-                                平倉
-                            </button>
-                        </div>
-                    `;
-                }).join('');
-            }
-
-            // 日誌
-            if (data.logs && Array.isArray(data.logs)) {
-                const logsHtml = data.logs.map(log => `<div>${log}</div>`).join('');
-                const logContainer = document.getElementById('logs');
-                if (logContainer.innerHTML !== logsHtml) {
-                    logContainer.innerHTML = logsHtml;
-                }
-            }
+            updatePositionsList(data.positions || []);
+            if (data.logs?.length) { el('logs').innerHTML = data.logs.map(l => `<div>${l}</div>`).join(''); }
+            if (data.trades) updateEquityChart(data.trades);
         }
 
-        // === Socket.IO 即時更新 ===
-        let socket = null;
-        let socketConnected = false;
+        const throttledUpdate = throttle(updateUI, 100);
 
+        // Socket.IO
         function initSocketIO() {
-            // 動態載入 Socket.IO 客戶端
             const script = document.createElement('script');
             script.src = '/socket.io/socket.io.js';
             script.onload = () => {
                 socket = io();
-
-                socket.on('connect', () => {
-                    console.log('🔌 Socket.IO 已連線');
-                    socketConnected = true;
-                    // 更新連線狀態指示
-                    const connEl = document.getElementById('connection-status');
-                    if (connEl) {
-                        connEl.textContent = '🟢 即時連線';
-                        connEl.className = 'status-badge status-connected';
-                    }
-                });
-
-                socket.on('disconnect', () => {
-                    console.log('🔌 Socket.IO 已斷線');
-                    socketConnected = false;
-                });
-
-                // 初始狀態
-                socket.on('initial-state', (data) => {
-                    console.log('📊 收到初始狀態');
-                    updateUI(data);
-                });
-
-                // 即時更新 (價格 + 帳戶資訊)
-                socket.on('realtime-update', (data) => {
-                    updateRealtimeUI(data);
-                });
-
-                // 帳戶更新
-                socket.on('account-update', (data) => {
-                    console.log('💰 帳戶更新');
-                    if (data.balance !== undefined) {
-                        document.getElementById('balance').textContent = '$' + data.balance.toFixed(2);
-                    }
-                    if (data.wins !== undefined) {
-                        document.getElementById('wins').textContent = data.wins;
-                    }
-                    if (data.losses !== undefined) {
-                        document.getElementById('losses').textContent = data.losses;
-                    }
-                });
-
-                // 持倉更新
-                socket.on('positions-update', (data) => {
-                    console.log('📈 持倉更新');
-                    updatePositionsList(data.positions || []);
-                });
-
-                // 交易事件
-                socket.on('trade-opened', (trade) => {
-                    console.log('📈 開倉通知:', trade);
-                });
-
-                socket.on('trade-closed', (trade) => {
-                    console.log('📉 平倉通知:', trade);
-                });
-
-                // 即時日誌推送
-                socket.on('new-log', (msg) => {
-                    const logContainer = document.getElementById('logs');
-                    const newLogDiv = document.createElement('div');
-                    newLogDiv.textContent = msg;
-                    logContainer.insertBefore(newLogDiv, logContainer.firstChild);
-                    // 保持最多 50 筆
-                    while (logContainer.children.length > 50) {
-                        logContainer.removeChild(logContainer.lastChild);
-                    }
-                });
+                socket.on('connect', () => { socketConnected = true; document.getElementById('connection-status').textContent = '🟢 即時連線'; document.getElementById('connection-status').className = 'status-badge status-connected'; });
+                socket.on('disconnect', () => { socketConnected = false; });
+                socket.on('initial-state', updateUI);
+                socket.on('realtime-update', throttledUpdate);
+                socket.on('account-update', d => { if (d.balance !== undefined) document.getElementById('balance').textContent = '$' + d.balance.toFixed(2); });
+                socket.on('positions-update', d => updatePositionsList(d.positions || []));
+                socket.on('new-log', msg => { const c = document.getElementById('logs'); const div = document.createElement('div'); div.textContent = msg; c.insertBefore(div, c.firstChild); while (c.children.length > 50) c.removeChild(c.lastChild); });
             };
             document.head.appendChild(script);
         }
 
-        // 即時 UI 更新 (輕量版，不更新日誌)
-        function updateRealtimeUI(data) {
-            const priceMultiplier = 100000;
-            const currentPriceReal = data.price ? data.price / priceMultiplier : null;
-            const openPriceReal = data.openPrice ? data.openPrice / priceMultiplier : null;
-
-            // 價格
-            if (currentPriceReal) {
-                document.getElementById('current-price').textContent = currentPriceReal.toFixed(2);
-            }
-            if (openPriceReal) {
-                document.getElementById('open-price').textContent = openPriceReal.toFixed(2);
-            }
-
-            // 價差
-            if (currentPriceReal && openPriceReal) {
-                const diff = currentPriceReal - openPriceReal;
-                const diffEl = document.getElementById('price-diff');
-                diffEl.textContent = (diff > 0 ? '+' : '') + diff.toFixed(2);
-                diffEl.className = diff > 0 ? 'text-green' : (diff < 0 ? 'text-red' : '');
-            }
-
-            // 帳戶統計
-            if (data.balance !== undefined) {
-                document.getElementById('balance').textContent = '$' + data.balance.toFixed(2);
-            }
-            if (data.equity !== undefined) {
-                const equityEl = document.getElementById('equity');
-                equityEl.textContent = '$' + data.equity.toFixed(2);
-                // 根據未實現損益設定顏色
-                if (data.unrealizedPnL > 0) {
-                    equityEl.className = 'stat-value text-green';
-                } else if (data.unrealizedPnL < 0) {
-                    equityEl.className = 'stat-value text-red';
-                } else {
-                    equityEl.className = 'stat-value';
-                }
-            }
-            if (data.usedMargin !== undefined) {
-                document.getElementById('usedMargin').textContent = '$' + data.usedMargin.toFixed(2);
-            }
-            if (data.freeMargin !== undefined) {
-                document.getElementById('freeMargin').textContent = '$' + data.freeMargin.toFixed(2);
-            }
-            if (data.wins !== undefined && data.losses !== undefined) {
-                document.getElementById('wins').textContent = data.wins;
-                document.getElementById('losses').textContent = data.losses;
-                const total = data.wins + data.losses;
-                document.getElementById('win-rate').textContent = total > 0
-                    ? ((data.wins / total) * 100).toFixed(1) + '%'
-                    : '--';
-            }
-            if (data.leverage) {
-                document.getElementById('leverage').textContent = '1:' + data.leverage;
-            }
-
-            // 狀態徽章
-            const watchEl = document.getElementById('watching-status');
-            if (data.isWatching) {
-                watchEl.textContent = '👁️ 盯盤中';
-                watchEl.className = 'status-badge status-watching';
-            } else {
-                watchEl.textContent = '💤 待機';
-                watchEl.className = 'status-badge status-idle';
-            }
-
-            const tradeEl = document.getElementById('trade-status');
-            if (data.todayTradeDone) {
-                tradeEl.textContent = '✅ 今日已交易';
-                tradeEl.className = 'status-badge status-connected';
-            } else {
-                tradeEl.textContent = '⏳ 等待進場';
-                tradeEl.className = 'status-badge status-idle';
-            }
-
-            // 持倉列表
-            if (data.positions) {
-                updatePositionsList(data.positions);
-            }
-        }
-
-        // 更新持倉列表
-        function updatePositionsList(positions) {
-            document.getElementById('position-count').textContent = positions.length;
-            const posListEl = document.getElementById('positions-list');
-
-            if (positions.length === 0) {
-                posListEl.innerHTML = '<div class="no-positions">目前無持倉</div>';
-            } else {
-                posListEl.innerHTML = positions.map(pos => {
-                    const typeClass = pos.type === 'long' ? 'position-long' : 'position-short';
-                    const typeIcon = pos.type === 'long' ? '📈' : '📉';
-
-                    // 計算損益顯示
-                    let pnlDisplay = '--';
-                    let pnlColor = '#94a3b8';
-                    if (pos.pnl != null) {
-                        pnlDisplay = (pos.pnl >= 0 ? '+' : '') + '$' + pos.pnl.toFixed(2);
-                        pnlColor = pos.pnl >= 0 ? '#22c55e' : '#ef4444';
-                    }
-
-                    return `
-                        <div class="position-card ${typeClass}" style="display: flex; align-items: center; gap: 12px;">
-                            <div style="flex: 1;">
-                                <div style="font-weight: 700; font-size: 1.1rem;">
-                                    ${typeIcon} ${pos.type.toUpperCase()}
-                                </div>
-                                <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
-                                    Entry: ${pos.entryPrice != null ? pos.entryPrice.toFixed(2) : '--'} | Vol: ${pos.volume != null ? pos.volume.toFixed(2) : '--'}
-                                </div>
-                            </div>
-                            <div style="text-align: right; flex-shrink: 0;">
-                                <div style="font-size: 1.1rem; font-weight: 700; color: ${pnlColor};">${pnlDisplay}</div>
-                                <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">ID: ${pos.id || '--'}</div>
-                            </div>
-                            <button onclick="closePosition(${pos.id})" 
-                                    style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600; flex-shrink: 0;"
-                                    onmouseover="this.style.background='#dc2626'" 
-                                    onmouseout="this.style.background='#ef4444'">
-                                平倉
-                            </button>
-                        </div>
-                    `;
-                }).join('');
-            }
-        }
-
-        // API 請求 (降級方案)
+        // API
         async function fetchStatus() {
-            // 如果 Socket.IO 已連線，跳過輪詢 (只每 10 秒同步一次日誌)
-            if (socketConnected && Date.now() - lastLogFetch < 10000) {
-                return;
-            }
+            if (socketConnected && Date.now() - lastLogFetch < 10000) return;
             lastLogFetch = Date.now();
-
-            try {
-                const res = await fetch(API_URL + '/status');
-                const data = await res.json();
-                // 只更新日誌 (其他由 Socket.IO 即時更新)
-                if (socketConnected) {
-                    if (data.logs && Array.isArray(data.logs)) {
-                        const logsHtml = data.logs.map(log => `<div>${log}</div>`).join('');
-                        const logContainer = document.getElementById('logs');
-                        if (logContainer.innerHTML !== logsHtml) {
-                            logContainer.innerHTML = logsHtml;
-                        }
-                    }
-                } else {
-                    // Socket.IO 未連線，完整更新
-                    updateUI(data);
-                }
-            } catch (e) {
-                console.error('Fetch error:', e);
-            }
+            try { const res = await fetch(API_URL + '/status'); const data = await res.json(); if (socketConnected) { if (data.logs) document.getElementById('logs').innerHTML = data.logs.map(l => `<div>${l}</div>`).join(''); } else updateUI(data); } catch (e) { console.debug('fetchStatus 忽略:', e.message); }
         }
-
-        let lastLogFetch = 0;
 
         async function doAction(action, config = null) {
             try {
-                const body = { action };
-                if (config) body.config = config;
-
-                const res = await fetch(API_URL + '/action', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
+                const body = { action }; if (config) body.config = config;
+                const res = await fetch(API_URL + '/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
                 const data = await res.json();
-                if (data.success) {
-                    updateUI(data.state);
-                } else {
-                    alert('操作失敗: ' + (data.error || '未知錯誤'));
-                }
-            } catch (e) {
-                alert('請求失敗: ' + e.message);
-            }
+                if (data.success) updateUI(data.state); else alert('操作失敗: ' + (data.error || data.message || '未知錯誤'));
+            } catch (e) { alert('請求失敗: ' + e.message); }
         }
 
-        // 操作函數
-        function toggleWatch() {
-            doAction('toggleWatch');
-        }
-
-        async function fetchOpenPrice() {
-            const res = await fetch(API_URL + '/action', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'fetchOpenPrice' })
-            });
-            const data = await res.json();
-            if (data.success) {
-                alert('✅ 基準點已取得');
-                updateUI(data.state);
-            } else {
-                alert('❌ ' + (data.message || '取得基準點失敗'));
-            }
-        }
-
-        function resetDaily() {
-            if (confirm('確定要重置今日交易狀態嗎？')) {
-                doAction('reset');
-            }
-        }
-
-        function closeAllPositions() {
-            if (confirm('⚠️ 確定要緊急平倉所有持倉嗎？此操作無法復原！')) {
-                doAction('closePositions');
-            }
-        }
-
-        async function closePosition(positionId) {
-            if (!confirm(`確定要平倉持倉 ID: ${positionId} 嗎？`)) return;
-
-            try {
-                const res = await fetch(API_URL + '/action', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'closePosition', positionId: positionId })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    updateUI(data.state);
-                } else {
-                    alert('平倉失敗: ' + (data.error || '未知錯誤'));
-                }
-            } catch (e) {
-                alert('請求失敗: ' + e.message);
-            }
-        }
-
-        function saveConfig() {
-            const config = {
-                entryOffset: document.getElementById('cfg-entryOffset').value,
-                longTP: document.getElementById('cfg-longTP').value,
-                shortTP: document.getElementById('cfg-shortTP').value,
-                longSL: document.getElementById('cfg-longSL').value,
-                shortSL: document.getElementById('cfg-shortSL').value,
-                lotSize: document.getElementById('cfg-lotSize').value,
-                minsAfterOpen: document.getElementById('cfg-minsAfterOpen').value,
-                baselineOffsetMinutes: document.getElementById('cfg-baselineOffsetMinutes').value
-            };
-            doAction('updateConfig', config);
-            alert('✅ 策略參數已儲存');
-        }
+        function toggleWatch() { doAction('toggleWatch'); }
+        function resetDaily() { if (confirm('確定要重置今日交易狀態嗎？')) doAction('reset'); }
+        function closeAllPositions() { if (confirm('⚠️ 確定要緊急平倉所有持倉嗎？')) doAction('closePositions'); }
+        async function fetchOpenPrice() { const res = await fetch(API_URL + '/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'fetchOpenPrice' }) }); const data = await res.json(); if (data.success) { alert('✅ 基準點已取得'); updateUI(data.state); } else alert('❌ ' + (data.message || '取得基準點失敗')); }
+        async function closePosition(id) { if (!confirm(`確定要平倉持倉 ID: ${id} 嗎？`)) return; try { const res = await fetch(API_URL + '/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'closePosition', positionId: id }) }); const data = await res.json(); if (data.success) updateUI(data.state); else alert('平倉失敗: ' + (data.error || '未知錯誤')); } catch (e) { alert('請求失敗: ' + e.message); } }
+        function saveConfig() { const cfg = {};['entryOffset', 'longTP', 'shortTP', 'longSL', 'shortSL', 'lotSize', 'minsAfterOpen', 'baselineOffsetMinutes'].forEach(f => cfg[f] = document.getElementById('cfg-' + f).value); doAction('updateConfig', cfg); alert('✅ 策略參數已儲存'); }
 
         // 初始化
-        initSocketIO(); // 優先使用 Socket.IO
-        fetchStatus();  // 首次載入取得完整資料
-        setInterval(fetchStatus, 2000); // 降級輪詢 (Socket.IO 連線時會跳過)
+        initSocketIO();
+        initEquityChart();
+        fetchStatus();
+        setInterval(fetchStatus, 2000);
     </script>
 </body>
 

@@ -1,15 +1,17 @@
 /**
  * ExecutionEngine - 交易執行引擎
- * 
- * 功能：
- * - 策略邏輯執行（均值回歸）
- * - 持倉管理
- * - 與 cTrader API 整合
- * - 狀態追蹤與持久化
+ * 策略邏輯執行、持倉管理、cTrader API 整合
  */
 
 const EventEmitter = require('events');
-const WebSocket = require('ws');
+const { convertLongValue, rawToRealPrice, realToRawPrice, getTaipeiTime, isUsDst, API_PRICE_MULTIPLIER, TAIPEI_OFFSET_MS } = require('./utils');
+
+const PNL_DIVISOR = 10000;
+const VOLUME_DIVISOR = 100;
+const MONEY_DIGITS_DEFAULT = 2;
+const TRADE_HISTORY_MAX = 50;
+const SYMBOL_CACHE_TTL = 3600000;
+const ACCOUNT_CACHE_TTL = 300000;
 
 class ExecutionEngine extends EventEmitter {
     constructor(connection, config, db) {
@@ -26,48 +28,44 @@ class ExecutionEngine extends EventEmitter {
         this.longSL = config.strategy.longSL;
         this.shortSL = config.strategy.shortSL;
         this.lotSize = config.account.baseLotSize;
+        this.minsAfterOpen = config.market.minsAfterOpen || 1;
+        this.baselineOffsetMinutes = config.market.baselineOffsetMinutes || 0;
 
-        // 盯盤時間設定
-        this.minsAfterOpen = config.market.minsAfterOpen || 1; // 開盤後幾分鐘開始盯盤
-        this.baselineOffsetMinutes = config.market.baselineOffsetMinutes || 0; // 基準點偏移 (0=開盤時)
-
-        // 狀態追蹤 (餘額從 cTrader API 即時取得，不使用預設值)
+        // 狀態追蹤
         this.balance = null;
         this.positions = [];
         this.todayTradeDone = false;
         this.todayOpenPrice = null;
         this.currentPrice = null;
         this.isWatching = false;
-        this.isPlacingOrder = false; // 並發鎖
-        this.orderFailureCount = 0; // 訂單失敗計數
+        this.isPlacingOrder = false;
+        this.orderFailureCount = 0;
 
         // 統計
         this.wins = 0;
         this.losses = 0;
         this.trades = [];
-
-        // 區間統計追蹤 (用於 Discord 報告)
         this.lastReportWins = 0;
         this.lastReportLosses = 0;
         this.lastReportProfit = 0;
 
-        // 緩存
         this.symbolInfoCache = {};
 
-        // 綁定訊息處理
         this.connection.on('message', this.handleMarketData.bind(this));
-
-        // 監聽 Account Auth 成功，自動訂閱報價（重連恢復機制的關鍵）
         this.connection.on('account-auth-success', () => {
             console.log('🔄 Account Auth 成功，重新訂閱報價並同步持倉...');
             this.subscribeToMarketData();
-            this.reconcilePositions(); // 關鍵修復：斷線重連後必須確認持倉狀態
+            this.reconcilePositions();
         });
     }
 
-    /**
-     * 初始化：從資料庫載入狀態
-     */
+    getMarketConfig(date = new Date()) {
+        const isDst = isUsDst(date);
+        return isDst ? this.config.market.summer : this.config.market.winter;
+    }
+
+
+    /** 初始化：從資料庫載入狀態 */
     async initialize() {
         try {
             const state = await this.db.loadState();
@@ -84,7 +82,6 @@ class ExecutionEngine extends EventEmitter {
                     this.longSL = state.config.longSL || this.longSL;
                     this.shortSL = state.config.shortSL || this.shortSL;
                     this.lotSize = state.config.lotSize || this.lotSize;
-                    // 新增盯盤時間設定
                     if (state.config.minsAfterOpen !== undefined) this.minsAfterOpen = state.config.minsAfterOpen;
                     if (state.config.baselineOffsetMinutes !== undefined) this.baselineOffsetMinutes = state.config.baselineOffsetMinutes;
                     console.log('⚙️ 策略參數已從資料庫恢復');
@@ -96,13 +93,11 @@ class ExecutionEngine extends EventEmitter {
             // 狀態對賬：詢問 cTrader 實際持倉
             await this.reconcilePositions();
 
-            // 重要：啟動時強制清除盯盤狀態
-            // 這可以防止重啟後自動使用舊的基準點開始交易
             this.isWatching = false;
             this.todayOpenPrice = null;
             console.log('⏳ 等待盯盤訊號 (cron 觸發)...');
 
-            // 啟動基準價輪詢（只要市場開盤就持續每 30 秒獲取一次）
+            // 啟動基準價輪詢
             this.startBaselinePricePolling();
 
         } catch (error) {
@@ -110,9 +105,7 @@ class ExecutionEngine extends EventEmitter {
         }
     }
 
-    /**
-     * 狀態對賬：比對 MongoDB 與 cTrader 的持倉
-     */
+    /** 狀態對賬：比對 MongoDB 與 cTrader 的持倉 */
     async reconcilePositions() {
         try {
             // 請求當前持倉 (ProtoOAReconcileReq)
@@ -123,50 +116,26 @@ class ExecutionEngine extends EventEmitter {
                 const side = p.tradeData.tradeSide; // 可能是 1 (BUY) 或 'BUY'
                 const isBuy = side === 1 || side === 'BUY';
 
-                // 處理 protobuf Long 物件轉換
-                const positionId = typeof p.positionId === 'object' && p.positionId.toNumber
-                    ? p.positionId.toNumber()
-                    : p.positionId;
-
-                // volume 在 tradeData 裡面
+                const positionId = convertLongValue(p.positionId);
                 const rawVolume = p.tradeData?.volume ?? p.volume;
-                const volume = typeof rawVolume === 'object' && rawVolume.toNumber
-                    ? rawVolume.toNumber()
-                    : rawVolume;
-
-                // price 已經是真實價格 (25454)，但 NAS100 有 2 位小數
-                // 需要加上 exactRepresentation (if exists) 或直接使用
-                const rawPrice = typeof p.price === 'object' && p.price.toNumber
-                    ? p.price.toNumber()
-                    : p.price;
-
-                const openTimestamp = typeof p.tradeData.openTimestamp === 'object' && p.tradeData.openTimestamp.toNumber
-                    ? p.tradeData.openTimestamp.toNumber()
-                    : p.tradeData.openTimestamp;
-
-                // volume 單位是 centilots (10 = 0.1 lots)，轉換為 lots
-                const volumeInLots = volume ? volume / 100 : null;
+                const volume = convertLongValue(rawVolume);
+                const rawPrice = convertLongValue(p.price);
+                const openTimestamp = convertLongValue(p.tradeData.openTimestamp);
+                const volumeInLots = volume ? volume / VOLUME_DIVISOR : null;
 
                 return {
                     id: positionId,
                     type: isBuy ? 'long' : 'short',
-                    entryPrice: rawPrice, // 已經是真實價格，不需轉換
-                    volume: volumeInLots, // 以 lots 為單位
+                    entryPrice: rawPrice,
+                    volume: volumeInLots,
                     openTime: new Date(openTimestamp)
                 };
             });
 
             if (this.positions.length > 0) {
                 console.log(`⚠️ 偵測到 ${this.positions.length} 個未平倉部位，同步中...`);
-
-                // 計算今日開盤時間 (Session Start Time)
-                // 判斷夏令時間 (簡單實作)
                 const now = new Date();
-                const year = now.getFullYear();
-                // 美股 DST: 3月第二個週日 ~ 11月第一個週日
-                // 這裡用簡化版: 3/14 ~ 11/7 大約範圍，或是直接複製完整邏輯
                 const isDst = this.checkIsUsDst(now);
-
                 const marketConfig = isDst ? this.config.market.summer : this.config.market.winter;
 
                 // 建立"當前會話"的起始時間
@@ -198,26 +167,9 @@ class ExecutionEngine extends EventEmitter {
         }
     }
 
-    /**
-     * 判斷美股夏令時間
-     */
-    checkIsUsDst(date) {
-        const year = date.getFullYear();
-        let dstStart = new Date(year, 2, 1);
-        while (dstStart.getDay() !== 0) dstStart.setDate(dstStart.getDate() + 1);
-        dstStart.setDate(dstStart.getDate() + 7); // 3月第2個週日
 
-        let dstEnd = new Date(year, 10, 1);
-        while (dstEnd.getDay() !== 0) dstEnd.setDate(dstEnd.getDate() + 1); // 11月第1個週日
-
-        return date >= dstStart && date < dstEnd;
-    }
-
-    /**
-     * 取得當前持倉
-     */
+    /** 取得當前持倉 */
     async getOpenPositions() {
-        // 發送 ProtoOAReconcileReq
         const ProtoOAReconcileReq = this.connection.proto.lookupType('ProtoOAReconcileReq');
         const message = ProtoOAReconcileReq.create({
             ctidTraderAccountId: parseInt(this.config.ctrader.accountId)
@@ -230,11 +182,8 @@ class ExecutionEngine extends EventEmitter {
         return payload.position || [];
     }
 
-    /**
-     * 取得帳戶資訊 (餘額、淨值、保證金等)
-     */
+    /** 取得帳戶資訊 (餘額、淨值、保證金等) */
     async getAccountInfo() {
-        // 檢查是否已連線且已認證
         if (!this.connection?.connected || !this.connection?.authenticated) {
             if (this.cachedAccountInfo && Date.now() - this.cachedAccountInfoTime < 300000) {
                 return this.cachedAccountInfo;
@@ -302,9 +251,7 @@ class ExecutionEngine extends EventEmitter {
         }
     }
 
-    /**
-     * 訂閱報價
-     */
+    /** 訂閱報價 */
     async subscribeToMarketData() {
         try {
             const ProtoOASubscribeSpotsReq = this.connection.proto.lookupType('ProtoOASubscribeSpotsReq');
@@ -326,9 +273,7 @@ class ExecutionEngine extends EventEmitter {
         }
     }
 
-    /**
-     * 取得 Symbol 資訊
-     */
+    /** 取得 Symbol 資訊 */
     async getSymbolInfo(symbolName) {
         // 先查緩存
         if (this.symbolInfoCache && this.symbolInfoCache[symbolName]) {
@@ -421,9 +366,7 @@ class ExecutionEngine extends EventEmitter {
         }
     }
 
-    /**
-     * 處理市場數據
-     */
+    /** 處理市場數據 */
     handleMarketData(data) {
         const { type, payload } = data;
 
@@ -438,25 +381,21 @@ class ExecutionEngine extends EventEmitter {
         }
     }
 
-    /**
-     * 處理報價更新
-     */
+    /** 處理報價更新 */
     handleSpotEvent(payload) {
         const ProtoOASpotEvent = this.connection.proto.lookupType('ProtoOASpotEvent');
         const spot = ProtoOASpotEvent.decode(payload);
 
         // 更新當前價格（使用 bid/ask 中間價）
         if (spot.bid && spot.ask) {
-            // 修正：protobufjs Long 物件轉為 Number
-            // SpotEvent 中的 bid/ask 是 uint64 (raw value)
-            const bid = typeof spot.bid === 'number' ? spot.bid : (spot.bid.toNumber ? spot.bid.toNumber() : Number(spot.bid));
-            const ask = typeof spot.ask === 'number' ? spot.ask : (spot.ask.toNumber ? spot.ask.toNumber() : Number(spot.ask));
+            // 使用工具函數處理 protobuf Long 物件轉換
+            const bid = convertLongValue(spot.bid);
+            const ask = convertLongValue(spot.ask);
 
             this.currentPrice = (bid + ask) / 2;
             this.currentBid = bid;
             this.currentAsk = ask;
 
-            // 發出價格更新事件 (用於 Socket.IO 即時推送)
             this.emit('price-update', {
                 price: this.currentPrice,
                 bid: bid,
@@ -465,28 +404,20 @@ class ExecutionEngine extends EventEmitter {
                 timestamp: Date.now()
             });
 
-            // 執行策略邏輯
             this.executeStrategy();
         }
     }
 
-    /**
-     * 計算即時帳戶資訊（基於當前價格）
-     * 用於 Socket.IO 即時推送，不需要呼叫 API
-     */
+    /** 計算即時帳戶資訊（基於當前價格） */
     calculateRealTimeAccountInfo() {
-        // 優先使用快取的 API 餘額 (餘額必須從 API 取得)
         const balance = this.cachedAccountInfo?.balance ?? 0;
-
-        // 計算未實現損益
         let unrealizedPnL = 0;
-        const apiMultiplier = 100000;
 
         // 計算每個持倉的即時損益
         const positionsWithPnL = this.positions.map(pos => {
             const entryPrice = pos.entryPrice;
-            const currentPrice = this.currentPrice ? this.currentPrice / apiMultiplier : null;
-            const volume = pos.volume; // volume 已經是 lots
+            const currentPrice = this.currentPrice ? rawToRealPrice(this.currentPrice) : null;
+            const volume = pos.volume;
 
             let pnl = null;
             if (currentPrice && volume) {
@@ -514,22 +445,19 @@ class ExecutionEngine extends EventEmitter {
             usedMargin: this.cachedAccountInfo?.usedMargin || 0,
             freeMargin: equity - (this.cachedAccountInfo?.usedMargin || 0),
             leverage: this.cachedAccountInfo?.leverage || null,
-            positions: positionsWithPnL  // 帶有即時損益的持倉列表
+            positions: positionsWithPnL
         };
     }
 
-    /**
-     * 處理訂單執行事件
-     */
+    /** 處理訂單執行事件 */
     handleExecutionEvent(payload) {
         const ProtoOAExecutionEvent = this.connection.proto.lookupType('ProtoOAExecutionEvent');
         const execution = ProtoOAExecutionEvent.decode(payload);
 
-        // executionType: 2=ORDER_ACCEPTED, 3=ORDER_FILLED, 4=ORDER_REJECTED, 5=ORDER_CANCELLED...
         const execType = execution.executionType;
         console.log('📨 訂單執行事件:', execType);
 
-        // 處理訂單成交（開倉或平倉）- executionType = 3 (ORDER_FILLED)
+        // ORDER_FILLED
         if (execType === 3 || execType === 'ORDER_FILLED') {
             // 檢查是否有 Deal 資訊
             if (execution.deal) {
@@ -546,11 +474,7 @@ class ExecutionEngine extends EventEmitter {
 
                     // 設定 SL/TP（基於基準點）
                     if (this.pendingSlTp && execution.position) {
-                        // 處理 protobuf Long 物件
-                        const rawPositionId = execution.position.positionId;
-                        const positionId = typeof rawPositionId === 'object' && rawPositionId.toNumber
-                            ? rawPositionId.toNumber()
-                            : rawPositionId;
+                        const positionId = convertLongValue(execution.position.positionId);
                         console.log(`📝 正在設定 SL/TP for position ${positionId}...`);
                         this.setPositionSlTp(positionId, this.pendingSlTp.stopLoss, this.pendingSlTp.takeProfit);
                         this.pendingSlTp = null;
@@ -608,12 +532,11 @@ class ExecutionEngine extends EventEmitter {
         const positionId = deal.positionId;
 
         // 計算損益 (Net Profit = Gross Profit + Swap + Commission)
-        // cTrader API: grossProfit/swap/commission 單位需要除以 10000
         const netProfitRaw = (detail.grossProfit || 0) + (detail.swap || 0) + (detail.commission || 0);
-        const netProfit = netProfitRaw / 10000;
+        const netProfit = netProfitRaw / PNL_DIVISOR;
 
         // balance 使用 moneyDigits 計算
-        const moneyDigits = detail.moneyDigits || 2;
+        const moneyDigits = detail.moneyDigits || MONEY_DIGITS_DEFAULT;
         const balance = (detail.balance || 0) / Math.pow(10, moneyDigits);
 
         console.log(`💰 交易平倉 ID: ${positionId} | 損益: $${netProfit.toFixed(2)} | 餘額: $${balance.toFixed(2)}`);
@@ -632,12 +555,10 @@ class ExecutionEngine extends EventEmitter {
             type: deal.tradeSide === 1 || deal.tradeSide === 'BUY' ? 'long' : 'short' // 1=BUY, 2=SELL
         };
         this.trades.unshift(tradeRecord);
-        if (this.trades.length > 50) this.trades.pop(); // 只保留最近 50 筆
+        if (this.trades.length > TRADE_HISTORY_MAX) this.trades.pop();
 
-        // 從持倉列表中移除 (處理 positionId Long 物件)
-        const closedPositionId = typeof positionId === 'object' && positionId.toNumber
-            ? positionId.toNumber()
-            : positionId;
+        // 從持倉列表中移除
+        const closedPositionId = convertLongValue(positionId);
         this.positions = this.positions.filter(p => p.id !== closedPositionId);
 
         // 儲存狀態
@@ -703,13 +624,9 @@ class ExecutionEngine extends EventEmitter {
             return; // 非交易時段，不執行策略
         }
 
-        // 修正：cTrader API v2 的 Raw Price 固定為真實價格 * 100,000
-        // 不論 Symbol 的 digits 是多少 (例如 NAS100 是 2)，API 傳來的整數都是乘了 10^5
-        // 因此，我們的 Offset 也必須乘上 100,000 才能進行比較
-        const multiplier = 100000;
-
+        // cTrader API 的 Raw Price = 真實價格 * API_PRICE_MULTIPLIER
         const diff = this.currentPrice - this.todayOpenPrice;
-        const offsetRaw = this.entryOffset * multiplier;
+        const offsetRaw = this.entryOffset * API_PRICE_MULTIPLIER;
 
         // 做空條件：價格高於開盤 + 進場偏移
         if (diff >= offsetRaw) {
@@ -756,8 +673,7 @@ class ExecutionEngine extends EventEmitter {
 
             // 計算基於基準點的 TP/SL 絕對價格
             // 策略：TP/SL 是相對於「基準點」而非「成交價」
-            const apiMultiplier = 100000;
-            const openPriceReal = this.todayOpenPrice / apiMultiplier;
+            const openPriceReal = rawToRealPrice(this.todayOpenPrice);
 
             let tpPriceReal, slPriceReal;
             if (type === 'long') {
@@ -788,7 +704,7 @@ class ExecutionEngine extends EventEmitter {
                 label: 'NAS100_MR'
             });
 
-            const currentPriceReal = this.currentPrice / apiMultiplier;
+            const currentPriceReal = rawToRealPrice(this.currentPrice);
             console.log(`${type === 'long' ? '📈' : '📉'} 開${type === 'long' ? '多' : '空'} | Price: ${currentPriceReal.toFixed(2)} | 目標TP: ${tpPriceReal.toFixed(2)} | 目標SL: ${slPriceReal.toFixed(2)}`);
 
             const response = await this.connection.send('ProtoOANewOrderReq', order);
