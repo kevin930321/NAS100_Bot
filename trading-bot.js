@@ -30,9 +30,10 @@ class TradingBot {
     /** 初始化機器人 */
     async init() {
         try {
-            // 0. 啟動 Token 自動更新
+            // 0. 啟動 Token 管理 (先同步檢查/刷新 Token)
             this.tokenManager = new TokenManager(config);
-            this.tokenManager.startAutoRefresh();
+            await this.tokenManager.checkAndRefresh(); // 等待 Token 準備好
+            this.tokenManager.startAutoRefresh();      // 再啟動背景自動更新
 
             // 1. 建立 cTrader 連線
             this.connection = new CTraderConnection(config, this.tokenManager);
