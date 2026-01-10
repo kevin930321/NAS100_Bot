@@ -193,7 +193,7 @@ class TradingBot {
     }
 
     /** 檢查時間並執行動作 */
-    checkTime() {
+    async checkTime() {
         // --- 連線看門狗 (Connection Watchdog) ---
         // 防止週末維護導致斷線後，週一無法自動恢復
         if (this.connection && !this.connection.connected && !this.connection.reconnectTimeout) {
@@ -211,8 +211,8 @@ class TradingBot {
         const today = taipeiTime.toDateString();
         const dayOfWeek = taipeiTime.getDay();
 
-        // 週末不處理
-        if (dayOfWeek === 0 || dayOfWeek === 6) return;
+        // 週末處理：仍需檢查是否需要重置狀態，但不啟動盯盤
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
         // 假日判斷已移至 ExecutionEngine.checkMarketStatus()
         // 由 cTrader API 動態取得假日資訊，無需手動維護
@@ -221,19 +221,36 @@ class TradingBot {
         const marketConfig = isDst ? config.market.summer : config.market.winter;
         const isAfterOpen = hour > marketConfig.openHour || (hour === marketConfig.openHour && minute >= marketConfig.openMinute);
 
-        // 新交易日判斷：只有在開盤時間後才算是新交易日的開始
-        // 這樣可以避免午夜時就觸發「新交易日」但市場還沒開盤
-        if (isAfterOpen && this.lastResetDate !== today) {
-            console.log(`📅 新交易日: ${today} (美股 ${isDst ? '夏令' : '冬令'}時間)`);
+        // 新交易日判斷：檢查日期是否變更
+        // 即使是週末/假日，也需要重置 todayTradeDone 狀態
+        if (this.lastResetDate !== today) {
+            const seasonStr = isDst ? '夏令' : '冬令';
+
+            // 取得市場狀態 (從 cTrader API)
+            let marketStatusStr = isWeekend ? '週末' : '交易日';
+            if (this.engine && this.connection?.connected) {
+                try {
+                    const status = await this.engine.checkMarketStatus();
+                    if (!status.isOpen) {
+                        marketStatusStr = status.reason; // 如: "假日: Martin Luther King Day"
+                    }
+                } catch (e) {
+                    // 忽略錯誤，使用預設值
+                }
+            }
+
+            console.log(`📅 新日期: ${today} (${marketStatusStr}, 美股${seasonStr})`);
 
             // 執行每日重置
             if (this.engine) {
                 this.resetDaily();
                 this.lastResetDate = today;
 
-                // 新交易日重置後，立即嘗試取得基準點
-                console.log('🔄 新交易日，嘗試取得今日基準點...');
-                this.engine.fetchAndSetOpenPrice();
+                // 非休市日才嘗試取得基準點
+                if (!isWeekend) {
+                    console.log('🔄 新交易日，嘗試取得今日基準點...');
+                    this.engine.fetchAndSetOpenPrice();
+                }
             }
         }
 
@@ -242,14 +259,20 @@ class TradingBot {
         // 這樣可以防止重啟後自動開始盯盤
         const isWatchTime = hour === target.hour && minute === target.minute;
 
-        if (isWatchTime && this.engine && !this.engine.todayTradeDone) {
-            // 如果尚未開始盯盤，嘗試啟動
-            if (!this.engine.isWatching) {
-                console.log(`⏰ ${target.hour}:${target.minute.toString().padStart(2, '0')} 觸發盯盤機制！`);
+        // 週末不盯盤
+        if (isWeekend) return;
 
-                // 嘗試開始盯盤 (內部會去 fetch 基準點，失敗則下次 checkTime 再試)
-                this.engine.startWatching();
+        // 檢查市場是否開放 (假日等)
+        if (isWatchTime && this.engine && !this.engine.todayTradeDone && !this.engine.isWatching) {
+            // 先檢查市場狀態
+            const marketStatus = await this.engine.checkMarketStatus();
+            if (!marketStatus.isOpen) {
+                console.log(`🚫 市場休市: ${marketStatus.reason}，跳過盯盤`);
+                return;
             }
+
+            console.log(`⏰ ${target.hour}:${target.minute.toString().padStart(2, '0')} 觸發盯盤機制！`);
+            this.engine.startWatching();
         }
     }
 
