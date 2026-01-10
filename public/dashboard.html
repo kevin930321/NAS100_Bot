@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NAS100 cTrader Bot Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -327,6 +326,13 @@
             font-size: 0.9rem;
         }
 
+        #equity-chart {
+            width: 100%;
+            height: 200px;
+            border-radius: 8px;
+            display: block;
+        }
+
         @media (max-width: 600px) {
             .price-display {
                 font-size: 2.5rem;
@@ -400,7 +406,7 @@
 
         <div class="card">
             <div class="card-label">📈 績效曲線</div>
-            <div style="height: 200px;"><canvas id="equity-chart"></canvas></div>
+            <canvas id="equity-chart"></canvas>
         </div>
 
         <div class="card">
@@ -485,23 +491,194 @@
                 : positions.map(renderPositionCard).join('');
         }
 
-        // 績效圖表
+        // 績效圖表 (Canvas 風格)
+        let chartData = null;
+        let chartConfig = null;
+
         function initEquityChart() {
             const canvas = document.getElementById('equity-chart');
             if (!canvas) return;
-            equityChart = new Chart(canvas.getContext('2d'), {
-                type: 'line',
-                data: { labels: [], datasets: [{ label: '淨值', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, pointRadius: 3 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#94a3b8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8' } } } }
-            });
+
+            // 初始化 canvas 尺寸並繪製空白背景
+            canvas.width = canvas.offsetWidth || 600;
+            canvas.height = 200;
+            const ctx = canvas.getContext('2d');
+
+            // 繪製深色背景
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 顯示提示文字
+            ctx.fillStyle = '#64748b';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('等待交易數據...', canvas.width / 2, canvas.height / 2);
         }
 
         function updateEquityChart(trades) {
-            if (!equityChart || !trades?.length) return;
+            if (!trades?.length) return;
+            const canvas = document.getElementById('equity-chart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            // 設定 canvas 尺寸
+            canvas.width = canvas.offsetWidth || 600;
+            canvas.height = 200;
+
             const sorted = [...trades].reverse();
-            equityChart.data.labels = sorted.map((_, i) => `#${i + 1}`);
-            equityChart.data.datasets[0].data = sorted.map(t => t.balance);
-            equityChart.update('none');
+            const values = sorted.map(t => t.balance);
+
+            const width = canvas.width;
+            const height = canvas.height;
+            const padding = 45;
+
+            const minVal = Math.min(...values);
+            const maxVal = Math.max(...values);
+            const range = maxVal - minVal || 1;
+
+            chartData = { values, sorted };
+            chartConfig = { width, height, padding, minVal, maxVal, range };
+
+            drawChartBase(ctx, chartData, chartConfig);
+
+            // 滑鼠事件
+            canvas.onmousemove = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                drawChartBase(ctx, chartData, chartConfig);
+                drawCrosshair(ctx, mouseX, mouseY, chartData, chartConfig);
+            };
+            canvas.onmouseleave = () => drawChartBase(ctx, chartData, chartConfig);
+        }
+
+        function drawChartBase(ctx, data, config) {
+            const { values } = data;
+            const { width, height, padding, minVal, maxVal, range } = config;
+
+            // 清空畫布
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, width, height);
+
+            if (values.length < 2) {
+                ctx.fillStyle = '#64748b';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('需要至少 2 筆交易數據', width / 2, height / 2);
+                return;
+            }
+
+            // 繪製填充區域
+            const step = (width - padding * 2) / (values.length - 1);
+            ctx.beginPath();
+            ctx.moveTo(padding, height - padding);
+            values.forEach((v, i) => {
+                const x = padding + i * step;
+                const y = height - padding - ((v - minVal) / range) * (height - padding * 2);
+                ctx.lineTo(x, y);
+            });
+            ctx.lineTo(padding + (values.length - 1) * step, height - padding);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+            ctx.fill();
+
+            // 繪製曲線
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            values.forEach((v, i) => {
+                const x = padding + i * step;
+                const y = height - padding - ((v - minVal) / range) * (height - padding * 2);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // 繪製數據點
+            values.forEach((v, i) => {
+                const x = padding + i * step;
+                const y = height - padding - ((v - minVal) / range) * (height - padding * 2);
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#3b82f6';
+                ctx.fill();
+            });
+
+            // Y 軸標籤
+            ctx.fillStyle = '#64748b';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('$' + maxVal.toFixed(0), 5, padding);
+            ctx.fillText('$' + minVal.toFixed(0), 5, height - padding + 15);
+
+            // X 軸標籤
+            ctx.textAlign = 'center';
+            ctx.fillText('#1', padding, height - 5);
+            ctx.fillText('#' + values.length, width - padding, height - 5);
+        }
+
+        function drawCrosshair(ctx, mouseX, mouseY, data, config) {
+            const { values, sorted } = data;
+            const { width, height, padding, minVal, range } = config;
+
+            if (mouseX < padding || mouseX > width - padding || mouseY < padding || mouseY > height - padding) return;
+
+            const totalPoints = values.length;
+            const step = (width - padding * 2) / (totalPoints - 1);
+            const index = Math.round((mouseX - padding) / step);
+            const clampedIndex = Math.max(0, Math.min(index, totalPoints - 1));
+            const crossX = padding + clampedIndex * step;
+
+            // 垂直線
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(crossX, padding);
+            ctx.lineTo(crossX, height - padding);
+            ctx.stroke();
+
+            // 水平線
+            ctx.beginPath();
+            ctx.moveTo(padding, mouseY);
+            ctx.lineTo(width - padding, mouseY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 數據提示框
+            const trade = sorted[clampedIndex];
+            const value = values[clampedIndex];
+            const y = height - padding - ((value - minVal) / range) * (height - padding * 2);
+
+            // 高亮數據點
+            ctx.beginPath();
+            ctx.arc(crossX, y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#3b82f6';
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 提示框
+            const boxW = 120, boxH = 45;
+            let boxX = crossX + 10;
+            if (boxX + boxW > width - 10) boxX = crossX - boxW - 10;
+            let boxY = y - boxH / 2;
+            if (boxY < 5) boxY = 5;
+            if (boxY + boxH > height - 5) boxY = height - boxH - 5;
+
+            ctx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+            ctx.fillRect(boxX, boxY, boxW, boxH);
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(`#${clampedIndex + 1}`, boxX + 8, boxY + 16);
+            ctx.fillStyle = value >= (sorted[0]?.balance || 0) ? '#22c55e' : '#ef4444';
+            ctx.fillText(`$${value.toFixed(2)}`, boxX + 8, boxY + 34);
         }
 
         // UI 更新
