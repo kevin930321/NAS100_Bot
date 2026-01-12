@@ -685,9 +685,11 @@
         function updateUI(data) {
             const el = (id) => document.getElementById(id);
             const setConn = (text, cls) => { el('connection-status').textContent = text; el('connection-status').className = 'status-badge ' + cls; };
-            if (data.connected && data.authenticated) setConn('🟢 已連線', 'status-connected');
-            else if (data.connected) setConn('🟡 連線中...', 'status-watching');
-            else setConn('🔴 未連線', 'status-disconnected');
+            if (!socketConnected) {
+                if (data.connected && data.authenticated) setConn('🟢 已連線', 'status-connected');
+                else if (data.connected) setConn('🟡 連線中...', 'status-watching');
+                else setConn('🔴 未連線', 'status-disconnected');
+            }
 
             el('watching-status').textContent = data.isWatching ? '👁️ 盯盤中' : '💤 待機';
             el('watching-status').className = 'status-badge ' + (data.isWatching ? 'status-watching' : 'status-idle');
