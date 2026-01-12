@@ -136,6 +136,7 @@ class TradingBot {
                 const accountInfo = this.engine.calculateRealTimeAccountInfo();
                 this.io.emit('realtime-update', {
                     ...data,
+                    currentPrice: data.price,
                     ...accountInfo,
                     isWatching: this.engine.isWatching,
                     todayTradeDone: this.engine.todayTradeDone,
