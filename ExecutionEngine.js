@@ -135,7 +135,7 @@ class ExecutionEngine extends EventEmitter {
             if (this.positions.length > 0) {
                 console.log(`⚠️ 偵測到 ${this.positions.length} 個未平倉部位，同步中...`);
                 const now = new Date();
-                const isDst = this.checkIsUsDst(now);
+                const isDst = isUsDst(now);
                 const marketConfig = isDst ? this.config.market.summer : this.config.market.winter;
 
                 // 建立"當前會話"的起始時間
@@ -592,7 +592,7 @@ class ExecutionEngine extends EventEmitter {
         const currentMinutes = hour * 60 + minute;
 
         // 判斷夏令/冬令
-        const isDst = this.checkIsUsDst(now);
+        const isDst = isUsDst(now);
 
         // 冬令時間：台北時間 07:30 - 隔天 06:00 (即 07:30-23:59 和 00:00-06:00)
         // 夏令時間：台北時間 06:30 - 隔天 05:00 (即 06:30-23:59 和 00:00-05:00)
@@ -811,7 +811,7 @@ class ExecutionEngine extends EventEmitter {
 
             // 計算今天的開盤時間
             const now = new Date();
-            const isDst = this.checkIsUsDst(now);
+            const isDst = isUsDst(now);
             const marketConfig = isDst ? this.config.market.summer : this.config.market.winter;
 
             // 修正：使用台北時區 (UTC+8) 計算開盤時間
