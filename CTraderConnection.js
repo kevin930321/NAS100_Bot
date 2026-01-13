@@ -271,6 +271,19 @@ class CTraderConnection extends EventEmitter {
                 console.error(`❌ API 錯誤: Code=${errorPayload.errorCode}, Desc=${errorPayload.description || '無描述'}, Maintenance=${errorPayload.maintenanceEndTimestamp || 'N/A'}`);
                 console.error(`   詳細: ${JSON.stringify(errorPayload)}`);
                 this.emit('api-error', errorPayload);
+
+                // 自動重連機制：當偵測到帳戶未授權錯誤時，自動重新連線
+                if (errorPayload.description && errorPayload.description.includes('not authorized')) {
+                    console.log('🔄 偵測到授權錯誤，5 秒後自動重新連線...');
+                    this.authenticated = false;
+                    setTimeout(() => {
+                        console.log('🔄 正在重新連線...');
+                        this.disconnect();
+                        this.connect().catch(err => {
+                            console.error('❌ 自動重連失敗:', err.message);
+                        });
+                    }, 5000);
+                }
                 break;
 
             case 'ProtoOAOrderErrorEvent':
