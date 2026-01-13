@@ -838,7 +838,7 @@ class ExecutionEngine extends EventEmitter {
 
             // 加上基準點偏移
             const baselineTimeUtc = openTimeUtc + (offsetMinutes * 60000);
-            const baselineTimeTaipei = new Date(baselineTimeUtc + TAIPEI_OFFSET);
+            const baselineTimeTaipei = new Date(baselineTimeUtc);
 
             console.log(`📅 鎖定基準時間: ${baselineTimeTaipei.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })} (台北時間, 偏移 ${offsetMinutes} 分鐘)`);
 
