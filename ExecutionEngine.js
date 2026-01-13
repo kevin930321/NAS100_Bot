@@ -814,33 +814,39 @@ class ExecutionEngine extends EventEmitter {
             const isDst = isUsDst(now);
             const marketConfig = isDst ? this.config.market.summer : this.config.market.winter;
 
-            // 修正：使用台北時區 (UTC+8) 計算開盤時間
-            // 避免伺服器時區不同導致計算錯誤
-            const TAIPEI_OFFSET = 8 * 60 * 60 * 1000; // UTC+8 in milliseconds
+            // 使用台北時區 (UTC+8) 計算開盤時間
+            // 台北時區偏移量：+8 小時
+            const TAIPEI_TZ_OFFSET_HOURS = 8;
 
-            // 取得當前 UTC 時間
-            const nowUtc = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
-            // 轉換為台北時間
-            const nowTaipei = new Date(nowUtc + TAIPEI_OFFSET);
+            // 取得當前台北時間的日期部分
+            const taipeiNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+            const year = taipeiNow.getFullYear();
+            const month = taipeiNow.getMonth();
+            const day = taipeiNow.getDate();
 
-            // 計算今日開盤時間（台北時間）
-            const openTimeTaipei = new Date(nowTaipei);
-            openTimeTaipei.setHours(marketConfig.openHour, marketConfig.openMinute, 0, 0);
+            // 建立今日開盤時間（台北時間 07:00 或 06:00）
+            // 轉為 UTC：台北時間 07:00 = UTC 前一天 23:00 (07:00 - 8 = -1:00 = 前一天 23:00)
+            const openHourUtc = marketConfig.openHour - TAIPEI_TZ_OFFSET_HOURS;
 
-            // 如果當前台北時間還沒到開盤，退回一天
-            if (nowTaipei < openTimeTaipei) {
-                console.warn('⚠️ 當前時間早於今日開盤時間，嘗試獲取昨日基準點...');
-                openTimeTaipei.setDate(openTimeTaipei.getDate() - 1);
+            // 如果 UTC 小時變成負數，需要調整日期
+            let openTimeUtc;
+            if (openHourUtc < 0) {
+                // 開盤時間在 UTC 的前一天
+                openTimeUtc = Date.UTC(year, month, day - 1, 24 + openHourUtc, marketConfig.openMinute, 0, 0);
+            } else {
+                openTimeUtc = Date.UTC(year, month, day, openHourUtc, marketConfig.openMinute, 0, 0);
             }
 
-            // 將台北時間轉回 UTC timestamp (供 API 使用)
-            const openTimeUtc = openTimeTaipei.getTime() - TAIPEI_OFFSET - openTimeTaipei.getTimezoneOffset() * 60 * 1000;
+            // 如果當前 UTC 時間還沒到開盤，退回一天
+            if (now.getTime() < openTimeUtc) {
+                console.warn('⚠️ 當前時間早於今日開盤時間，嘗試獲取昨日基準點...');
+                openTimeUtc -= 24 * 60 * 60 * 1000; // 減一天
+            }
 
             // 加上基準點偏移
             const baselineTimeUtc = openTimeUtc + (offsetMinutes * 60000);
-            const baselineTimeTaipei = new Date(baselineTimeUtc);
 
-            console.log(`📅 鎖定基準時間: ${baselineTimeTaipei.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })} (台北時間, 偏移 ${offsetMinutes} 分鐘)`);
+            console.log(`📅 鎖定基準時間: ${new Date(baselineTimeUtc).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })} (台北時間, 偏移 ${offsetMinutes} 分鐘)`);
 
             // 請求該分鐘的 M1 K 線
             // 請求前後 5 分鐘的 K 線，確保能包含到目標時間
@@ -879,7 +885,7 @@ class ExecutionEngine extends EventEmitter {
                     const barTimeTaipei = new Date(barTimeUtc).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
                     console.log(`🔍 [Debug] K線時間: ${barTimeTaipei} (UTC: ${new Date(barTimeUtc).toISOString()})`);
 
-                    console.log(`✅ 取得 cTrader 精確基準價 (${baselineTimeTaipei.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei' })}): ${openPrice} (Raw Points)`);
+                    console.log(`✅ 取得 cTrader 精確基準價 (${new Date(baselineTimeUtc).toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei' })}): ${openPrice} (Raw Points)`);
                     return openPrice;
                 } else {
                     console.warn(`⚠️ 找到 K 線資料，但沒有目標時間的資料 (最近: ${new Date(payload.trendbar[0].utcTimestampInMinutes * 60000).toISOString()})`);
