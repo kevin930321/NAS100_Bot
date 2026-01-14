@@ -7,6 +7,8 @@ const tls = require('tls');
 const protobuf = require('protobufjs');
 const path = require('path');
 const EventEmitter = require('events');
+const { apiLogger } = require('./logger');
+const { ConnectionError } = require('./errors');
 
 const CONNECTION_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;

@@ -3,6 +3,7 @@
  */
 
 const { MongoClient } = require('mongodb');
+const { systemLogger } = require('./logger');
 
 // 連線字串從環境變數讀取
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/nas100-bot';

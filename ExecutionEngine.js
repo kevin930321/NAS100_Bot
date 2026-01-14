@@ -5,6 +5,8 @@
 
 const EventEmitter = require('events');
 const { convertLongValue, rawToRealPrice, realToRawPrice, getTaipeiTime, isUsDst, API_PRICE_MULTIPLIER, TAIPEI_OFFSET_MS } = require('./utils');
+const { tradeLogger, logAudit } = require('./logger');
+const { OrderError, MarketDataError } = require('./errors');
 
 const PNL_DIVISOR = 10000;
 const VOLUME_DIVISOR = 100;
@@ -567,6 +569,14 @@ class ExecutionEngine extends EventEmitter {
         // 發送事件通知
         this.emit('trade-closed', tradeRecord);
 
+        // 審計日誌
+        logAudit('CLOSE_POSITION', {
+            positionId: closedPositionId,
+            profit: netProfit,
+            balance: this.balance,
+            type: tradeRecord.type
+        });
+
         // 發送帳戶更新事件 (用於 Socket.IO 即時推送)
         this.emit('account-update', {
             balance: this.balance,
@@ -715,6 +725,15 @@ class ExecutionEngine extends EventEmitter {
             this.emit('trade-opened', {
                 type,
                 price: this.currentPrice,
+                tp: tpPriceReal,
+                sl: slPriceReal
+            });
+
+            // 審計日誌
+            logAudit('OPEN_POSITION', {
+                type,
+                price: currentPriceReal,
+                volume: volume,
                 tp: tpPriceReal,
                 sl: slPriceReal
             });

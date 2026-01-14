@@ -6,6 +6,7 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { systemLogger } = require('./logger');
 
 const TOKEN_ENDPOINT = 'https://openapi.ctrader.com/apps/token';
 const TOKEN_REFRESH_BUFFER_MS = 24 * 60 * 60 * 1000; // 提前 1 天更新

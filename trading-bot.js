@@ -278,19 +278,7 @@ class TradingBot {
     }
 
     // isUsDst 已移至 utils.js
-
-    /**
-     * 判斷美股假日
-     */
-    isMajorUSHoliday(date) {
-        const month = date.getMonth();
-        const day = date.getDate();
-
-        if (month === 0 && day === 1) return true; // 元旦
-        if (month === 11 && day === 25) return true; // 聖誕節
-
-        return false;
-    }
+    // isMajorUSHoliday 已移除，假日判斷由 ExecutionEngine.checkMarketStatus() 透過 cTrader API 動態處理
 
     /** 每日重置 */
     async resetDaily() {
