@@ -1123,6 +1123,7 @@ class ExecutionEngine extends EventEmitter {
             positions: this.positions,
             isWatching: this.isWatching,
             todayTradeDone: this.todayTradeDone,
+            trades: this.trades,
             symbolInfo: this.symbolInfoCache[this.config.market.symbol] ? {
                 name: this.symbolInfoCache[this.config.market.symbol].symbolName,
                 holidays: this.symbolInfoCache[this.config.market.symbol].holidays?.length || 0,
