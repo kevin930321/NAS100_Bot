@@ -141,7 +141,10 @@ class TradingBot {
                     isWatching: this.engine.isWatching,
                     todayTradeDone: this.engine.todayTradeDone,
                     wins: this.engine.wins,
-                    losses: this.engine.losses
+                    losses: this.engine.losses,
+                    winRate: this.engine.wins + this.engine.losses > 0
+                        ? ((this.engine.wins / (this.engine.wins + this.engine.losses)) * 100).toFixed(1) + '%'
+                        : '--'
                 });
             }
         });
