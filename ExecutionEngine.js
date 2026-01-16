@@ -1031,6 +1031,7 @@ class ExecutionEngine extends EventEmitter {
      * 取得並設定基準價（每 30 秒輪詢一次）
      * 使用 cTrader API 獲取基準價
      * 會持續每 30 秒嘗試獲取，直到今日交易完成或手動停止
+     * 當到達基準點時間時，會先清空目前的基準價再重新獲取
      */
     async fetchAndSetOpenPrice() {
         const POLL_INTERVAL_MS = 30000; // 30 秒
@@ -1044,6 +1045,13 @@ class ExecutionEngine extends EventEmitter {
             if (!marketStatus.isOpen) {
                 console.log(`🚫 市場未開放: ${marketStatus.reason}`);
                 return false;
+            }
+
+            // 檢查是否到達基準點時間，若是則先清空目前的基準價
+            const shouldResetBaseline = this.checkIfBaselineTimeReached();
+            if (shouldResetBaseline && this.todayOpenPrice !== null) {
+                console.log('🔄 到達基準點時間，清空目前基準價以重新獲取...');
+                this.todayOpenPrice = null;
             }
 
             // 使用 cTrader API 取得基準價
@@ -1060,6 +1068,35 @@ class ExecutionEngine extends EventEmitter {
         } finally {
             this.isFetchingOpenPrice = false;
         }
+    }
+
+    /**
+     * 檢查當前時間是否剛好到達基準點時間（在 2 分鐘內）
+     * 用於判斷是否需要清空並重新獲取基準價
+     * @returns {boolean} 是否到達基準點時間
+     */
+    checkIfBaselineTimeReached() {
+        const offsetMinutes = this.baselineOffsetMinutes || 0;
+        const now = new Date();
+        const isDst = isUsDst(now);
+        const marketConfig = isDst ? this.config.market.summer : this.config.market.winter;
+
+        // 計算當前台北時間
+        const taipeiTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Taipei" });
+        const taipeiTime = new Date(taipeiTimeStr);
+        const currentHour = taipeiTime.getHours();
+        const currentMinute = taipeiTime.getMinutes();
+        const currentTotalMinutes = currentHour * 60 + currentMinute;
+
+        // 計算基準點時間 (開盤時間 + 偏移)
+        const baselineTotalMinutes = marketConfig.openHour * 60 + marketConfig.openMinute + offsetMinutes;
+
+        // 判斷當前時間是否在基準點時間的 2 分鐘內
+        // 這樣可以確保在基準點時間前後都能觸發清空
+        const isWithinBaselineWindow = currentTotalMinutes >= baselineTotalMinutes && 
+                                        currentTotalMinutes < baselineTotalMinutes + 2;
+
+        return isWithinBaselineWindow;
     }
 
     /**
