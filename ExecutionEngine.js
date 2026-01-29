@@ -624,10 +624,20 @@ class ExecutionEngine extends EventEmitter {
 
     /**
      * 執行策略邏輯
+     * 使用 Ask 判斷做多訊號、Bid 判斷做空訊號，更貼近實際成交價
      */
     async executeStrategy() {
-        if (!this.currentPrice || !this.todayOpenPrice) return;
+        // 確保 bid/ask 都存在且有效
+        if (!this.currentBid || !this.currentAsk || !this.todayOpenPrice) return;
         if (this.todayTradeDone || !this.isWatching) return;
+
+        // 價格驗證：NAS100 正常價格應該在 10000 以上 (Raw: 1000000000000)
+        // 防止錯誤的報價數據觸發交易
+        const MIN_VALID_PRICE = 1000000000000; // Raw price for 10000
+        if (this.currentBid < MIN_VALID_PRICE || this.currentAsk < MIN_VALID_PRICE) {
+            console.warn(`⚠️ 價格異常，忽略此報價: Bid=${this.currentBid}, Ask=${this.currentAsk}`);
+            return;
+        }
 
         // 檢查是否在交易時段內 (台北時間 07:01 - 06:00 隔天，即美股交易時間)
         if (!this.isWithinTradingHours()) {
@@ -635,17 +645,16 @@ class ExecutionEngine extends EventEmitter {
         }
 
         // cTrader API 的 Raw Price = 真實價格 * API_PRICE_MULTIPLIER
-        const diff = this.currentPrice - this.todayOpenPrice;
         const offsetRaw = this.entryOffset * API_PRICE_MULTIPLIER;
 
-        // 做空條件：價格高於開盤 + 進場偏移
-        if (diff >= offsetRaw) {
-            console.log(`📉 訊號觸發: 現價(${this.currentPrice}) >= 開盤(${this.todayOpenPrice}) + Offset(${offsetRaw})`);
+        // 做空條件：Bid 高於基準點 + 進場偏移（做空用 Bid 判斷，因為賣出時用 Bid 成交）
+        if (this.currentBid >= this.todayOpenPrice + offsetRaw) {
+            console.log(`📉 訊號觸發: Bid(${this.currentBid}) >= 開盤(${this.todayOpenPrice}) + Offset(${offsetRaw})`);
             this.openPosition('short');
         }
-        // 做多條件：價格低於開盤 - 進場偏移
-        else if (diff <= -offsetRaw) {
-            console.log(`📈 訊號觸發: 現價(${this.currentPrice}) <= 開盤(${this.todayOpenPrice}) - Offset(${offsetRaw})`);
+        // 做多條件：Ask 低於基準點 - 進場偏移（做多用 Ask 判斷，因為買入時用 Ask 成交）
+        else if (this.currentAsk <= this.todayOpenPrice - offsetRaw) {
+            console.log(`📈 訊號觸發: Ask(${this.currentAsk}) <= 開盤(${this.todayOpenPrice}) - Offset(${offsetRaw})`);
             this.openPosition('long');
         }
     }
