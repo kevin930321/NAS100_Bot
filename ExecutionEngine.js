@@ -388,26 +388,35 @@ class ExecutionEngine extends EventEmitter {
         const ProtoOASpotEvent = this.connection.proto.lookupType('ProtoOASpotEvent');
         const spot = ProtoOASpotEvent.decode(payload);
 
-        // 更新當前價格（使用 bid/ask 中間價）
-        if (spot.bid && spot.ask) {
-            // 使用工具函數處理 protobuf Long 物件轉換
-            const bid = convertLongValue(spot.bid);
-            const ask = convertLongValue(spot.ask);
+        // 使用工具函數處理 protobuf Long 物件轉換
+        const bid = convertLongValue(spot.bid);
+        const ask = convertLongValue(spot.ask);
 
-            this.currentPrice = (bid + ask) / 2;
-            this.currentBid = bid;
-            this.currentAsk = ask;
-
-            this.emit('price-update', {
-                price: this.currentPrice,
-                bid: bid,
-                ask: ask,
-                openPrice: this.todayOpenPrice,
-                timestamp: Date.now()
-            });
-
-            this.executeStrategy();
+        // 1️⃣ 檢查 bid/ask 都是有效正數
+        if (!bid || !ask || bid <= 0 || ask <= 0) {
+            return; // 忽略不完整的報價
         }
+
+        // 2️⃣ 檢查 bid/ask 的合理性 (ask 應該 >= bid)
+        if (ask < bid) {
+            console.warn(`⚠️ 異常報價: bid=${bid} > ask=${ask}，忽略`);
+            return;
+        }
+
+        // ✅ 通過驗證，更新價格（使用 bid/ask 中間價）
+        this.currentPrice = (bid + ask) / 2;
+        this.currentBid = bid;
+        this.currentAsk = ask;
+
+        this.emit('price-update', {
+            price: this.currentPrice,
+            bid: bid,
+            ask: ask,
+            openPrice: this.todayOpenPrice,
+            timestamp: Date.now()
+        });
+
+        this.executeStrategy();
     }
 
     /** 計算即時帳戶資訊（基於當前價格） */
