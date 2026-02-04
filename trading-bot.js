@@ -13,7 +13,7 @@ const config = require('./config');
 const CTraderConnection = require('./CTraderConnection');
 const ExecutionEngine = require('./ExecutionEngine');
 const db = require('./db');
-const { isUsDst } = require('./utils');
+const { isUsDst, rawToRealPrice } = require('./utils');
 const TokenManager = require('./tokenManager');
 
 class TradingBot {
@@ -56,9 +56,6 @@ class TradingBot {
 
             this.lastResetDate = this.engine.lastResetDate;
             console.log(`📅 同步重置日期: ${this.lastResetDate || '無'}`);
-
-            // Setup Risk Management API
-            this.setupRiskApi();
 
             // 綁定事件
             this.bindEvents();
@@ -134,7 +131,6 @@ class TradingBot {
                          return pId == positionId;
                     });
                     if (pos && pos.stopLoss) {
-                        const { rawToRealPrice } = require('./utils');
                         // ProtoOAPosition stopLoss is raw? Yes.
                         currentSl = rawToRealPrice(pos.stopLoss);
                     }
@@ -640,9 +636,12 @@ const io = new Server(server, {
     }
 });
 
-// 將 io 注入到 bot
+// 將 io 和 app 注入到 bot
 bot.io = io;
-bot.app = app; // Inject express app for Risk API
+bot.app = app;
+
+// 初始化 Risk Management API (必須在 bot.app 設定後)
+bot.setupRiskApi();
 
 // Socket.IO 連線處理
 io.on('connection', (socket) => {
