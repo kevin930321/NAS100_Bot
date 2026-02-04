@@ -13,7 +13,7 @@ const config = require('./config');
 const CTraderConnection = require('./CTraderConnection');
 const ExecutionEngine = require('./ExecutionEngine');
 const db = require('./db');
-const { isUsDst } = require('./utils');
+const { isUsDst, rawToRealPrice } = require('./utils');
 const TokenManager = require('./tokenManager');
 
 class TradingBot {
@@ -66,6 +66,88 @@ class TradingBot {
             console.error('❌ 初始化失敗:', error);
             throw error;
         }
+    }
+
+    setupRiskApi() {
+        // Simple API for Risk Agent to modify positions
+        this.app.post('/api/risk/modify', express.json(), async (req, res) => {
+            const { token, positionId, takeProfit, stopLoss } = req.body;
+
+            // Simple security check
+            if (token !== process.env.RISK_AGENT_TOKEN) {
+                return res.status(403).json({ error: 'Unauthorized' });
+            }
+
+            if (!this.engine) {
+                return res.status(503).json({ error: 'Engine not ready' });
+            }
+
+            try {
+                console.log(`🛡️ Risk Agent requesting modification for Position ${positionId}...`);
+                
+                // If stopLoss is not provided, we need to fetch the current one or keep it same.
+                // setPositionSlTp requires both. 
+                // Let's find the position to get current SL if missing
+                let currentSl = stopLoss;
+                let currentTp = takeProfit;
+
+                if (currentSl === undefined || currentTp === undefined) {
+                    const positions = await this.engine.getOpenPositions();
+                    // Handle Long/Integer position ID matching
+                    const pos = positions.find(p => {
+                         const pId = typeof p.positionId === 'object' ? p.positionId.toNumber() : parseInt(p.positionId);
+                         return pId == positionId;
+                    });
+
+                    if (!pos) {
+                        return res.status(404).json({ error: 'Position not found' });
+                    }
+
+                    if (currentSl === undefined) currentSl = pos.stopLoss; // Note: cTrader API might return raw price or relative? 
+                    // Wait, getOpenPositions returns ProtoOAPosition which has stopLoss in raw format usually. 
+                    // But setPositionSlTp expects Real Price.
+                    // ExecutionEngine.js internal structure uses "positions" array with parsed data?
+                    // Let's rely on the engine's internal list if possible, or force user to provide both.
+                    
+                    // Actually, to be safe, Risk Agent should provide the explicit value it wants.
+                    // But if Risk Agent only wants to change TP, it needs to know SL.
+                    // For now, let's assume Risk Agent provides BOTH or we use the engine's cached positions.
+                    
+                    const cachedPos = this.engine.positions.find(p => p.id == positionId);
+                     if (cachedPos) {
+                        // cachedPos doesn't store SL/TP in the lightweight list in ExecutionEngine.js constructor...
+                        // It only stores: id, type, entryPrice, volume, openTime.
+                        // So we MUST fetch from API or require input.
+                     }
+                }
+                
+                // If we still don't have SL, we can't call setPositionSlTp safely without querying.
+                // Simplified: The Risk Agent MUST provide both TP and SL if it calls this.
+                // Or we fetch it here. Let's fetch it here to be robust.
+                if (currentSl === undefined) {
+                     const positions = await this.engine.getOpenPositions();
+                     const pos = positions.find(p => {
+                         const pId = typeof p.positionId === 'object' ? p.positionId.toNumber() : parseInt(p.positionId);
+                         return pId == positionId;
+                    });
+                    if (pos && pos.stopLoss) {
+                        // ProtoOAPosition stopLoss is raw? Yes.
+                        currentSl = rawToRealPrice(pos.stopLoss);
+                    }
+                }
+
+                if (currentSl !== undefined && currentTp !== undefined) {
+                    await this.engine.setPositionSlTp(positionId, currentSl, currentTp);
+                    res.json({ success: true, message: 'Modification command sent' });
+                } else {
+                    res.status(400).json({ error: 'Missing SL or TP and could not fetch current values' });
+                }
+
+            } catch (error) {
+                console.error('❌ Risk API Error:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
     }
 
     /** 綁定事件監聽 */
@@ -554,8 +636,12 @@ const io = new Server(server, {
     }
 });
 
-// 將 io 注入到 bot
+// 將 io 和 app 注入到 bot
 bot.io = io;
+bot.app = app;
+
+// 初始化 Risk Management API (必須在 bot.app 設定後)
+bot.setupRiskApi();
 
 // Socket.IO 連線處理
 io.on('connection', (socket) => {

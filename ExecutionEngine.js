@@ -735,7 +735,9 @@ class ExecutionEngine extends EventEmitter {
                 type,
                 price: this.currentPrice,
                 tp: tpPriceReal,
-                sl: slPriceReal
+                sl: slPriceReal,
+                baselinePrice: rawToRealPrice(this.todayOpenPrice), // Add baseline price for Risk Agent
+                positionId: null // positionId is not available yet, will be updated in order-filled if needed, or Risk Agent waits for order-filled
             });
 
             // 審計日誌
