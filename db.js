@@ -5,9 +5,22 @@
 const { MongoClient } = require('mongodb');
 const { systemLogger } = require('./logger');
 
-// 連線字串從環境變數讀取
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/nas100-bot';
-const DB_NAME = 'trading-bot';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/us30-bot';
+
+/**
+ * 從 URI 中解析資料庫名稱
+ */
+function getDbNameFromUri(uri) {
+    try {
+        const url = new URL(uri);
+        const path = url.pathname.replace('/', '');
+        return path || 'trading-bot'; // 如果 path 為空，回退到預設名稱
+    } catch (e) {
+        return 'trading-bot';
+    }
+}
+
+const DB_NAME = getDbNameFromUri(MONGODB_URI);
 const COLLECTION_NAME = 'profiles';
 const STATE_COLLECTION = 'bot_state'; // 新增：機器人狀態集合
 
