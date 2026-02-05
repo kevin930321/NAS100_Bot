@@ -301,7 +301,7 @@ class ExecutionEngine extends EventEmitter {
             // 如果找不到精確匹配，嘗試模糊搜尋
             if (!symbol) {
                 console.warn(`⚠️ 找不到精確名稱 '${symbolName}'，嘗試搜尋替代名稱...`);
-                const candidates = ['NAS100', 'US100', 'USTEC', 'QQQ', 'NAS100.cash', 'US100.cash'];
+                const candidates = ['US30', 'DJ30', 'Wall Street 30', 'WS30', 'US30.cash', 'DJ30.cash'];
 
                 for (const candidate of candidates) {
                     symbol = payload.symbol.find(s => s.symbolName.toUpperCase().includes(candidate.toUpperCase()));
@@ -359,8 +359,8 @@ class ExecutionEngine extends EventEmitter {
         } catch (error) {
             console.error('❌ 查詢 Symbol 資訊失敗:', error.message);
 
-            // Fallback: 如果查詢失敗且是標準 NAS100
-            if (symbolName === 'NAS100') {
+            // Fallback: 如果查詢失敗且是標準 US30
+            if (symbolName === 'US30') {
                 console.warn('⚠️ API 查詢失敗，使用預設值嘗試...');
                 return { symbolId: 1, lotSize: 100, digits: 2 };
             }
@@ -720,7 +720,7 @@ class ExecutionEngine extends EventEmitter {
                 tradeSide: type === 'long' ? 1 : 2, // BUY=1, SELL=2
                 volume: volume,
                 // 不帶 SL/TP，成交後設定
-                label: 'NAS100_MR'
+                label: 'US30_MR'
             });
 
             const currentPriceReal = rawToRealPrice(this.currentPrice);
