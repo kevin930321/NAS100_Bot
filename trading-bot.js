@@ -1,4 +1,4 @@
-/** NAS100 真實交易機器人 - cTrader Open API + ExecutionEngine + Express Dashboard */
+/** US30 真實交易機器人 - cTrader Open API + ExecutionEngine + Express Dashboard */
 
 require('dotenv').config();
 
@@ -24,7 +24,7 @@ class TradingBot {
         this.io = null;
         this.lastDate = null;
         this.lastResetDate = null;
-        console.log('🤖 NAS100 真實交易機器人初始化...');
+        console.log('🤖 US30 真實交易機器人初始化...');
     }
 
     /** 初始化機器人 */
@@ -488,7 +488,7 @@ const basicAuth = (req, res, next) => {
 
     const authHeader = req.headers.authorization;
     if (!authHeader) {
-        res.set('WWW-Authenticate', 'Basic realm="NAS100 Dashboard"');
+        res.set('WWW-Authenticate', 'Basic realm="US30 Dashboard"');
         return res.status(401).send('需要登入');
     }
 

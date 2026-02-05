@@ -1,6 +1,6 @@
-# NAS100 均值回歸交易機器人
+# US30 均值回歸交易機器人
 
-🤖 基於 cTrader Open API 的 NAS100 均值回歸自動交易系統
+🤖 基於 cTrader Open API 的 US30 均值回歸自動交易系統
 
 ---
 

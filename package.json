@@ -1,7 +1,7 @@
 {
-  "name": "nas100-trading-bot",
+  "name": "us30-trading-bot",
   "version": "1.0.0",
-  "description": "NAS100 均值回歸交易模擬器 - 雲端版本",
+  "description": "US30 均值回歸交易機器人",
   "main": "trading-bot.js",
   "scripts": {
     "start": "node trading-bot.js",
