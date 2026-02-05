@@ -3,9 +3,10 @@
  */
 
 const { MongoClient } = require('mongodb');
+const config = require('./config');
 const { systemLogger } = require('./logger');
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/us30-bot';
+const MONGODB_URI = config.mongodb.uri;
 
 /**
  * 從 URI 中解析資料庫名稱
