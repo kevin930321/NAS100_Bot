@@ -52,6 +52,7 @@ class ExecutionEngine extends EventEmitter {
         this.lastReportProfit = 0;
 
         this.symbolInfoCache = {};
+        this.closedPositionIds = new Set(); // 去重：防止同一筆平倉被重複計算勝負
 
         this.connection.on('message', this.handleMarketData.bind(this));
         this.connection.on('account-auth-success', () => {
@@ -541,6 +542,14 @@ class ExecutionEngine extends EventEmitter {
     handleTradeClosed(deal) {
         const detail = deal.closePositionDetail;
         const positionId = deal.positionId;
+        const positionIdNorm = convertLongValue(positionId);
+
+        // 去重：防止 cTrader 對同一筆平倉發送多個 ORDER_FILLED 事件
+        if (this.closedPositionIds.has(positionIdNorm)) {
+            console.log(`⚠️ 重複的平倉事件 (ID: ${positionIdNorm})，已忽略`);
+            return;
+        }
+        this.closedPositionIds.add(positionIdNorm);
 
         // 計算損益 (Net Profit = Gross Profit + Swap + Commission)
         const netProfitRaw = (detail.grossProfit || 0) + (detail.swap || 0) + (detail.commission || 0);
@@ -550,12 +559,13 @@ class ExecutionEngine extends EventEmitter {
         const moneyDigits = detail.moneyDigits || MONEY_DIGITS_DEFAULT;
         const balance = (detail.balance || 0) / Math.pow(10, moneyDigits);
 
-        console.log(`💰 交易平倉 ID: ${positionId} | 損益: $${netProfit.toFixed(2)} | 餘額: $${balance.toFixed(2)}`);
+        console.log(`💰 交易平倉 ID: ${positionIdNorm} | 損益: $${netProfit.toFixed(2)} | 餘額: $${balance.toFixed(2)}`);
 
         // 更新狀態
         this.balance = balance;
         if (netProfit > 0) this.wins++;
-        else this.losses++;
+        else if (netProfit < 0) this.losses++;
+        // netProfit == 0 (打平) 不計入勝負
 
         // 記錄交易歷史
         const tradeRecord = {
@@ -792,6 +802,7 @@ class ExecutionEngine extends EventEmitter {
         this.isWatching = false;
         this.isPlacingOrder = false;
         this.orderFailureCount = 0;
+        this.closedPositionIds.clear(); // 清空去重記錄
 
         // 記錄重置日期
         this.lastResetDate = todayStr;
@@ -1104,8 +1115,8 @@ class ExecutionEngine extends EventEmitter {
 
         // 判斷當前時間是否在基準點時間的 2 分鐘內
         // 這樣可以確保在基準點時間前後都能觸發清空
-        const isWithinBaselineWindow = currentTotalMinutes >= baselineTotalMinutes && 
-                                        currentTotalMinutes < baselineTotalMinutes + 2;
+        const isWithinBaselineWindow = currentTotalMinutes >= baselineTotalMinutes &&
+            currentTotalMinutes < baselineTotalMinutes + 2;
 
         return isWithinBaselineWindow;
     }
