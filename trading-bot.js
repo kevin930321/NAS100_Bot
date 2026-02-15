@@ -166,14 +166,14 @@ class TradingBot {
                 this.io.emit('trade-closed', trade);
             }
 
-            // 每 100 次結算發送 Discord 統計報告
+            // 每 10 次結算發送 Discord 統計報告
             const totalTrades = this.engine.wins + this.engine.losses;
-            if (totalTrades > 0 && totalTrades % 100 === 0) {
+            if (totalTrades > 0 && totalTrades % 10 === 0) {
                 // 計算累計統計
                 const totalWinRate = ((this.engine.wins / totalTrades) * 100).toFixed(1);
                 const totalProfit = this.engine.trades.reduce((sum, t) => sum + (t.profit || 0), 0);
 
-                // 計算本期區間統計 (最近 100 次)
+                // 計算本期區間統計 (最近 10 次)
                 const periodWins = this.engine.wins - this.engine.lastReportWins;
                 const periodLosses = this.engine.losses - this.engine.lastReportLosses;
                 const periodTotal = periodWins + periodLosses;
@@ -181,7 +181,7 @@ class TradingBot {
                 const periodProfit = totalProfit - this.engine.lastReportProfit;
 
                 // 計算區間範圍
-                const fromTrade = totalTrades - 99;
+                const fromTrade = totalTrades - 9;
                 const toTrade = totalTrades;
 
                 const msg = `📊 **第 ${fromTrade}-${toTrade} 次結算報告**\n` +
