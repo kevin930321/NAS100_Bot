@@ -94,6 +94,11 @@
             color: #94a3b8;
         }
 
+        .status-paused {
+            background: rgba(249, 115, 22, 0.2);
+            color: #f97316;
+        }
+
         .price-display {
             text-align: center;
             font-size: 3rem;
@@ -213,6 +218,11 @@
 
         .btn-success {
             background: var(--success-color);
+            color: white;
+        }
+
+        .btn-pause {
+            background: #f97316;
             color: white;
         }
 
@@ -353,6 +363,7 @@
                 <span id="connection-status" class="status-badge status-disconnected">⚪ 連線中...</span>
                 <span id="watching-status" class="status-badge status-idle">👁️ 待機</span>
                 <span id="trade-status" class="status-badge status-idle">📊 今日未交易</span>
+                <span id="pause-status" class="status-badge" style="display:none">⏸️ 交易暫停</span>
             </div>
         </div>
 
@@ -432,6 +443,7 @@
             <div class="card-label">🎮 操作控制</div>
             <div class="actions-row">
                 <button class="btn-primary" onclick="toggleWatch()">👁️ 切換盯盤</button>
+                <button id="pause-btn" class="btn-pause" onclick="togglePause()">⏸️ 暫停交易</button>
                 <button class="btn-success" onclick="fetchOpenPrice()">📊 取得基準點</button>
                 <button class="btn-warning" onclick="resetDaily()">🔄 重置今日狀態</button>
                 <button class="btn-danger" onclick="closeAllPositions()">⚠️ 緊急平倉</button>
@@ -696,6 +708,21 @@
             el('trade-status').textContent = data.todayTradeDone ? '✅ 今日已交易' : '⏳ 等待進場';
             el('trade-status').className = 'status-badge ' + (data.todayTradeDone ? 'status-connected' : 'status-idle');
 
+            // 暫停狀態
+            const pauseStatusEl = el('pause-status');
+            const pauseBtn = el('pause-btn');
+            if (data.tradingPaused) {
+                pauseStatusEl.style.display = '';
+                pauseStatusEl.className = 'status-badge status-paused';
+                pauseStatusEl.textContent = '⏸️ 交易暫停';
+                pauseBtn.textContent = '▶️ 繼續交易';
+                pauseBtn.className = 'btn-success';
+            } else {
+                pauseStatusEl.style.display = 'none';
+                pauseBtn.textContent = '⏸️ 暫停交易';
+                pauseBtn.className = 'btn-pause';
+            }
+
             const curPrice = data.currentPrice ? data.currentPrice / PRICE_MULTIPLIER : null;
             const openPrice = data.openPrice ? data.openPrice / PRICE_MULTIPLIER : null;
             el('current-price').textContent = curPrice ? curPrice.toFixed(2) : '--';
@@ -766,6 +793,7 @@
         }
 
         function toggleWatch() { doAction('toggleWatch'); }
+        function togglePause() { doAction('togglePause'); }
         function resetDaily() { if (confirm('確定要重置今日交易狀態嗎？')) doAction('reset'); }
         function closeAllPositions() { if (confirm('⚠️ 確定要緊急平倉所有持倉嗎？')) doAction('closePositions'); }
         async function fetchOpenPrice() { const res = await fetch(API_URL + '/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'fetchOpenPrice' }) }); const data = await res.json(); if (data.success) { alert('✅ 基準點已取得'); updateUI(data.state); } else alert('❌ ' + (data.message || '取得基準點失敗')); }
