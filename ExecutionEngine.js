@@ -41,6 +41,7 @@ class ExecutionEngine extends EventEmitter {
         this.currentPrice = null;
         this.isWatching = false;
         this.isPlacingOrder = false;
+        this.tradingPaused = false;
         this.orderFailureCount = 0;
 
         // 統計
@@ -645,6 +646,7 @@ class ExecutionEngine extends EventEmitter {
      * 執行策略邏輯
      */
     async executeStrategy() {
+        if (this.tradingPaused) return;
         if (!this.currentPrice || !this.todayOpenPrice) return;
         if (this.todayTradeDone || !this.isWatching) return;
 
@@ -803,6 +805,7 @@ class ExecutionEngine extends EventEmitter {
         this.isPlacingOrder = false;
         this.orderFailureCount = 0;
         this.closedPositionIds.clear(); // 清空去重記錄
+        this.tradingPaused = false; // Reset tradingPaused
 
         // 記錄重置日期
         this.lastResetDate = todayStr;
@@ -1171,6 +1174,7 @@ class ExecutionEngine extends EventEmitter {
      */
     getStatus() {
         return {
+            tradingPaused: this.tradingPaused,
             balance: this.balance,
             wins: this.wins,
             losses: this.losses,

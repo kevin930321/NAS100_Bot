@@ -84,7 +84,7 @@ class TradingBot {
 
             try {
                 console.log(`🛡️ Risk Agent requesting modification for Position ${positionId}...`);
-                
+
                 // If stopLoss is not provided, we need to fetch the current one or keep it same.
                 // setPositionSlTp requires both. 
                 // Let's find the position to get current SL if missing
@@ -95,8 +95,8 @@ class TradingBot {
                     const positions = await this.engine.getOpenPositions();
                     // Handle Long/Integer position ID matching
                     const pos = positions.find(p => {
-                         const pId = typeof p.positionId === 'object' ? p.positionId.toNumber() : parseInt(p.positionId);
-                         return pId == positionId;
+                        const pId = typeof p.positionId === 'object' ? p.positionId.toNumber() : parseInt(p.positionId);
+                        return pId == positionId;
                     });
 
                     if (!pos) {
@@ -108,27 +108,27 @@ class TradingBot {
                     // But setPositionSlTp expects Real Price.
                     // ExecutionEngine.js internal structure uses "positions" array with parsed data?
                     // Let's rely on the engine's internal list if possible, or force user to provide both.
-                    
+
                     // Actually, to be safe, Risk Agent should provide the explicit value it wants.
                     // But if Risk Agent only wants to change TP, it needs to know SL.
                     // For now, let's assume Risk Agent provides BOTH or we use the engine's cached positions.
-                    
+
                     const cachedPos = this.engine.positions.find(p => p.id == positionId);
-                     if (cachedPos) {
+                    if (cachedPos) {
                         // cachedPos doesn't store SL/TP in the lightweight list in ExecutionEngine.js constructor...
                         // It only stores: id, type, entryPrice, volume, openTime.
                         // So we MUST fetch from API or require input.
-                     }
+                    }
                 }
-                
+
                 // If we still don't have SL, we can't call setPositionSlTp safely without querying.
                 // Simplified: The Risk Agent MUST provide both TP and SL if it calls this.
                 // Or we fetch it here. Let's fetch it here to be robust.
                 if (currentSl === undefined) {
-                     const positions = await this.engine.getOpenPositions();
-                     const pos = positions.find(p => {
-                         const pId = typeof p.positionId === 'object' ? p.positionId.toNumber() : parseInt(p.positionId);
-                         return pId == positionId;
+                    const positions = await this.engine.getOpenPositions();
+                    const pos = positions.find(p => {
+                        const pId = typeof p.positionId === 'object' ? p.positionId.toNumber() : parseInt(p.positionId);
+                        return pId == positionId;
                     });
                     if (pos && pos.stopLoss) {
                         // ProtoOAPosition stopLoss is raw? Yes.
@@ -221,6 +221,7 @@ class TradingBot {
                     currentPrice: data.price,
                     ...accountInfo,
                     isWatching: this.engine.isWatching,
+                    tradingPaused: this.engine.tradingPaused,
                     todayTradeDone: this.engine.todayTradeDone,
                     wins: this.engine.wins,
                     losses: this.engine.losses,
@@ -600,6 +601,13 @@ app.post('/api/action', async (req, res) => {
             case 'updateConfig':
                 if (bot.engine && req.body.config) {
                     bot.engine.updateConfig(req.body.config);
+                }
+                break;
+
+            case 'togglePause':
+                if (bot.engine) {
+                    bot.engine.tradingPaused = !bot.engine.tradingPaused;
+                    console.log(`⏸️ 交易${bot.engine.tradingPaused ? '已暫停' : '已繼續'}`);
                 }
                 break;
 
